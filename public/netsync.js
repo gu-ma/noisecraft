@@ -12,6 +12,7 @@ export class NetSync
         this.lastPulseTime = 0;
         this.tempoBpm = 0;
         this.lastTempoEmit = 0;
+        this.lastHostPulseTime = 0;
 
         if (this.mode != 'off')
             this.connect();
@@ -63,35 +64,34 @@ export class NetSync
                 this.lastPulseTime = 0;
                 this.tempoBpm = 0;
                 this.lastTempoEmit = 0;
+                this.lastHostPulseTime = 0;
                 this.emit('NETSYNC_CLOCK_STOP', msg);
             }
             if (msg.type == 'CLOCK_PULSE' && this.mode == 'client')
             {
-                let now = performance.now();
-                if (this.lastPulseTime)
+                // Prefer authoritative BPM sent by host pulse messages.
+                if (isFinite(msg.bpm) && msg.bpm > 20 && msg.bpm < 400)
                 {
-                    let pulseMs = now - this.lastPulseTime;
-                    let bpm = 60000 / (pulseMs * 24);
-                    if (isFinite(bpm) && bpm > 20 && bpm < 400)
+                    this.tempoBpm = msg.bpm;
+                    this.emit('NETSYNC_TEMPO', { bpm: this.tempoBpm });
+                }
+                else
+                {
+                    // Fallback if host BPM is unavailable.
+                    let now = performance.now();
+                    if (this.lastPulseTime)
                     {
-                        // Strong smoothing for network jitter resistance.
-                        // Lower alpha = less wobble in the displayed/applied BPM.
-                        const alpha = 0.02;
-                        this.tempoBpm = this.tempoBpm? (this.tempoBpm * (1 - alpha) + bpm * alpha):bpm;
-
-                        // Emit at most once per quarter note (24 PPQ),
-                        // and only if BPM changed meaningfully.
-                        if ((this.pulseCount % 24) == 0)
+                        let pulseMs = now - this.lastPulseTime;
+                        let bpm = 60000 / (pulseMs * 24);
+                        if (isFinite(bpm) && bpm > 20 && bpm < 400)
                         {
-                            if (!this.lastTempoEmit || Math.abs(this.tempoBpm - this.lastTempoEmit) >= 0.1)
-                            {
-                                this.lastTempoEmit = this.tempoBpm;
-                                this.emit('NETSYNC_TEMPO', { bpm: this.tempoBpm });
-                            }
+                            this.tempoBpm = bpm;
+                            this.emit('NETSYNC_TEMPO', { bpm: this.tempoBpm });
                         }
                     }
+                    this.lastPulseTime = now;
                 }
-                this.lastPulseTime = now;
+
                 this.emit('NETSYNC_CLOCK_PULSE', msg);
             }
         };
@@ -165,7 +165,18 @@ export class NetSync
     {
         if (this.mode != 'host')
             return;
-        this.send({ type: 'CLOCK_PULSE', sessionId: this.sessionId, time: pulseTime });
+
+        let bpm = null;
+        if (this.lastHostPulseTime)
+        {
+            let pulseDt = pulseTime - this.lastHostPulseTime;
+            let estBpm = 60 / (pulseDt * 24);
+            if (isFinite(estBpm) && estBpm > 20 && estBpm < 400)
+                bpm = estBpm;
+        }
+        this.lastHostPulseTime = pulseTime;
+
+        this.send({ type: 'CLOCK_PULSE', sessionId: this.sessionId, time: pulseTime, bpm: bpm });
     }
 
     sendStart()
@@ -179,6 +190,7 @@ export class NetSync
     {
         if (this.mode != 'host')
             return;
+        this.lastHostPulseTime = 0;
         this.send({ type: 'CLOCK_STOP', sessionId: this.sessionId, serverTime: Date.now() });
     }
 }
