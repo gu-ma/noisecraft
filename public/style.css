@@ -468,3 +468,32 @@ div.cell_high
     background: rgba(0,0,0,0.80);
     z-index: 2;
 }
+
+
+#net_sync_badge
+{
+    margin: 4px;
+    padding: 2px 8px;
+    font-family: sans-serif;
+    font-size: 12px;
+    border-radius: 10px;
+    border: 1px solid #666;
+}
+
+.status_badge_off
+{
+    color: #AAA;
+    border-color: #666;
+}
+
+.status_badge_host
+{
+    color: #0F0;
+    border-color: #0A0;
+}
+
+.status_badge_client
+{
+    color: #6CF;
+    border-color: #39F;
+}

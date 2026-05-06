@@ -17,6 +17,7 @@ let btnSave = document.getElementById('btn_save');
 let btnShare = document.getElementById('btn_share');
 let btnPlay = document.getElementById('btn_play');
 let btnStop = document.getElementById('btn_stop');
+let netSyncBadge = document.getElementById('net_sync_badge');
 
 // Project model/state
 let model = new Model();
@@ -33,6 +34,24 @@ let titleView = new TitleView(model);
 // Most recent location of a mouse or touch event
 let cursor = { x: 0, y: 0 };
 
+
+function updateNetSyncBadge()
+{
+    let mode = netSync.mode || 'off';
+    let state = 'disconnected';
+
+    if (mode != 'off' && netSync.ws)
+    {
+        if (netSync.ws.readyState == WebSocket.OPEN)
+            state = 'connected';
+        else if (netSync.ws.readyState == WebSocket.CONNECTING)
+            state = 'connecting';
+    }
+
+    netSyncBadge.className = `status_badge status_badge_${mode}`;
+    netSyncBadge.textContent = `NetSync: ${mode} (${state})`;
+}
+
 document.body.onload = async function ()
 {
     //browserWarning();
@@ -42,6 +61,9 @@ document.body.onload = async function ()
     const params = new URLSearchParams(location.search);
     const syncMode = params.get('net_sync');
     const syncSession = params.get('net_session');
+    updateNetSyncBadge();
+    setInterval(updateNetSyncBadge, 1000);
+
     if (syncMode)
     {
         if (syncMode == 'off' || syncMode == 'host' || syncMode == 'client')
