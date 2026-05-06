@@ -89,8 +89,8 @@ document.body.onload = async function ()
         for (let nodeId in nodes)
         {
             let node = nodes[nodeId];
-            if (node.type == 'Clock' && editor.nodes.has(Number(nodeId)))
-                model.update(new SetParam(Number(nodeId), 'value', bpm));
+            if (node.type == 'Clock' && editor.nodes.has(nodeId))
+                model.update(new SetParam(nodeId, 'value', bpm));
         }
     });
 
