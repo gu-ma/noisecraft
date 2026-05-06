@@ -64,6 +64,17 @@ document.body.onload = async function ()
     updateNetSyncBadge();
     setInterval(updateNetSyncBadge, 1000);
 
+
+    window.addEventListener('NETSYNC_CLOCK_START', () => {
+        if (netSync.mode == 'client')
+            startPlayback();
+    });
+
+    window.addEventListener('NETSYNC_CLOCK_STOP', () => {
+        if (netSync.mode == 'client')
+            stopPlayback();
+    });
+
     if (syncMode)
     {
         if (syncMode == 'off' || syncMode == 'host' || syncMode == 'client')

@@ -46,13 +46,25 @@ export class NetSync
             {
                 this.serverStartTime = msg.serverTime;
                 this.localStartTime = performance.now();
+                this.emit('NETSYNC_CLOCK_START', msg);
             }
             if (msg.type == 'CLOCK_STOP' && this.mode == 'client')
             {
                 this.serverStartTime = 0;
                 this.localStartTime = 0;
+                this.emit('NETSYNC_CLOCK_STOP', msg);
+            }
+            if (msg.type == 'CLOCK_PULSE' && this.mode == 'client')
+            {
+                this.emit('NETSYNC_CLOCK_PULSE', msg);
             }
         };
+    }
+
+
+    emit(type, payload={})
+    {
+        window.dispatchEvent(new CustomEvent(type, { detail: payload }));
     }
 
     configure(mode, sessionId)
