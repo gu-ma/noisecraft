@@ -8,6 +8,7 @@ import sqlite3 from 'sqlite3';
 import crc from 'crc';
 import crypto from 'crypto';
 import ejs from 'ejs';
+import { WebSocketServer } from 'ws';
 
 // Load the model so we can validate projects
 import * as model from './public/model.js';
@@ -17,6 +18,17 @@ const dbFilePath = process.env.DB_FILE_PATH || './database.db';
 const serverHTTPPortNo = process.env.HTTP_PORT_NO  || 7773;
 
 var app = express();
+
+
+// Basic in-memory clock sessions for network sync
+const clockSessions = new Map();
+
+function getClockSession(sessionId)
+{
+    if (!clockSessions.has(sessionId))
+        clockSessions.set(sessionId, { sockets: new Set(), host: null });
+    return clockSessions.get(sessionId);
+}
 
 // Create application/json parser
 var jsonParser = bodyParser.json({limit: '1mb'});
@@ -820,4 +832,60 @@ const server = app.listen(serverHTTPPortNo, () =>
     let port = server.address().port;
     address = (address == "::")? "localhost":address;
     console.log(`app started at ${address}:${port}`);
+});
+
+
+const wss = new WebSocketServer({ server, path: '/ws-clock' });
+
+wss.on('connection', (ws) =>
+{
+    ws.clockSessionId = null;
+    ws.clockRole = 'client';
+
+    ws.on('message', (data) =>
+    {
+        let msg = JSON.parse(data.toString());
+
+        if (msg.type == 'JOIN_CLOCK_SESSION')
+        {
+            ws.clockSessionId = msg.sessionId || 'default';
+            ws.clockRole = msg.role || 'client';
+            let sess = getClockSession(ws.clockSessionId);
+            sess.sockets.add(ws);
+            if (ws.clockRole == 'host')
+                sess.host = ws;
+            return;
+        }
+
+        if (!ws.clockSessionId)
+            return;
+
+        let sess = getClockSession(ws.clockSessionId);
+
+        // Only host can publish clock events
+        if (sess.host !== ws)
+            return;
+
+        if (msg.type == 'CLOCK_PULSE' || msg.type == 'CLOCK_START' || msg.type == 'CLOCK_STOP')
+        {
+            for (let peer of sess.sockets)
+            {
+                if (peer !== ws && peer.readyState == peer.OPEN)
+                    peer.send(JSON.stringify(msg));
+            }
+        }
+    });
+
+    ws.on('close', () =>
+    {
+        if (!ws.clockSessionId)
+            return;
+
+        let sess = getClockSession(ws.clockSessionId);
+        sess.sockets.delete(ws);
+        if (sess.host === ws)
+            sess.host = null;
+        if (sess.sockets.size == 0)
+            clockSessions.delete(ws.clockSessionId);
+    });
 });

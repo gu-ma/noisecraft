@@ -6,6 +6,7 @@ import { AudioView } from './audioview.js';
 import { TitleView } from './titleview.js';
 import * as session from './session.js';
 import * as sharing from './sharing.js';
+import { netSync } from './netsync.js';
 
 // Project title input
 let inputProjectTitle = document.getElementById('project_title');
@@ -35,6 +36,16 @@ let cursor = { x: 0, y: 0 };
 document.body.onload = async function ()
 {
     //browserWarning();
+
+    // Optional network clock sync config via URL params:
+    // ?net_sync=off|host|client&net_session=my-room
+    const params = new URLSearchParams(location.search);
+    const syncMode = params.get('net_sync');
+    const syncSession = params.get('net_session');
+    if (syncMode)
+    {
+        netSync.configure(syncMode, syncSession || 'default');
+    }
 
     // Parse the projectId from the path
     let path = location.pathname;
