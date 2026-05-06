@@ -14,8 +14,15 @@ export class NetSync
 
     connect()
     {
+        if (this.mode == 'off')
+            return;
+
         if (this.ws)
-            this.ws.close();
+        {
+            if (this.ws.readyState == WebSocket.OPEN || this.ws.readyState == WebSocket.CONNECTING)
+                return;
+            this.ws = null;
+        }
 
         let proto = (location.protocol === 'https:')? 'wss':'ws';
         this.ws = new WebSocket(`${proto}://${location.host}/ws-clock`);
@@ -23,6 +30,14 @@ export class NetSync
         this.ws.onopen = () => {
             this.send({ type: 'JOIN_CLOCK_SESSION', sessionId: this.sessionId, role: this.mode });
             console.log(`[NetSync] connected mode=${this.mode} session=${this.sessionId}`);
+        };
+
+        this.ws.onerror = (err) => {
+            console.log('[NetSync] websocket error', err);
+        };
+
+        this.ws.onclose = () => {
+            this.ws = null;
         };
 
         this.ws.onmessage = (event) => {
@@ -42,17 +57,33 @@ export class NetSync
 
     configure(mode, sessionId)
     {
-        this.mode = mode;
-        this.sessionId = sessionId;
-        localStorage.setItem('net_sync_mode', mode);
-        localStorage.setItem('net_sync_session', sessionId);
-        if (mode == 'off')
+        let nextMode = mode || 'off';
+        let nextSessionId = sessionId || 'default';
+        let modeChanged = (this.mode != nextMode);
+        let sessionChanged = (this.sessionId != nextSessionId);
+
+        this.mode = nextMode;
+        this.sessionId = nextSessionId;
+        localStorage.setItem('net_sync_mode', nextMode);
+        localStorage.setItem('net_sync_session', nextSessionId);
+
+        if (!modeChanged && !sessionChanged)
+            return;
+
+        if (nextMode == 'off')
         {
             if (this.ws)
                 this.ws.close();
             this.ws = null;
             return;
         }
+
+        if (this.ws)
+        {
+            this.ws.close();
+            this.ws = null;
+        }
+
         this.connect();
     }
 
