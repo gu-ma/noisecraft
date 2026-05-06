@@ -44,7 +44,14 @@ document.body.onload = async function ()
     const syncSession = params.get('net_session');
     if (syncMode)
     {
-        netSync.configure(syncMode, syncSession || 'default');
+        if (syncMode == 'off' || syncMode == 'host' || syncMode == 'client')
+        {
+            netSync.configure(syncMode, syncSession || 'default');
+        }
+        else
+        {
+            console.warn(`[NetSync] ignoring invalid net_sync mode: ${syncMode}`);
+        }
     }
 
     // Parse the projectId from the path
