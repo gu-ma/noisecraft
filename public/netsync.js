@@ -7,6 +7,8 @@ export class NetSync
         this.ws = null;
         this.serverStartTime = 0;
         this.localStartTime = 0;
+        this.pulseCount = 0;
+        this.lastPulseLogTime = 0;
 
         if (this.mode != 'off')
             this.connect();
@@ -42,6 +44,7 @@ export class NetSync
 
         this.ws.onmessage = (event) => {
             let msg = JSON.parse(event.data);
+            this.logMessage('recv', msg);
             if (msg.type == 'CLOCK_START' && this.mode == 'client')
             {
                 this.serverStartTime = msg.serverTime;
@@ -52,6 +55,8 @@ export class NetSync
             {
                 this.serverStartTime = 0;
                 this.localStartTime = 0;
+                this.pulseCount = 0;
+                this.lastPulseLogTime = 0;
                 this.emit('NETSYNC_CLOCK_STOP', msg);
             }
             if (msg.type == 'CLOCK_PULSE' && this.mode == 'client')
@@ -65,6 +70,24 @@ export class NetSync
     emit(type, payload={})
     {
         window.dispatchEvent(new CustomEvent(type, { detail: payload }));
+    }
+
+    logMessage(direction, msg)
+    {
+        if (msg.type == 'CLOCK_PULSE')
+        {
+            this.pulseCount += 1;
+            if ((this.pulseCount % 24) != 0)
+                return;
+
+            let now = performance.now();
+            let dt = this.lastPulseLogTime? (now - this.lastPulseLogTime):0;
+            this.lastPulseLogTime = now;
+            console.log(`[NetSync] ${direction} CLOCK_PULSE x24 session=${this.sessionId} dt=${dt.toFixed(1)}ms`);
+            return;
+        }
+
+        console.log(`[NetSync] ${direction} ${msg.type} session=${this.sessionId}`);
     }
 
     configure(mode, sessionId)
@@ -104,6 +127,7 @@ export class NetSync
         if (!this.ws || this.ws.readyState != WebSocket.OPEN)
             return;
         this.ws.send(JSON.stringify(msg));
+        this.logMessage('send', msg);
     }
 
     sendPulse(pulseTime)
