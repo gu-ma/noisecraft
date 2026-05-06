@@ -1,6 +1,6 @@
 import { anyInputActive } from './utils.js';
 import { Dialog, errorDialog } from './dialog.js';
-import { Model, Paste, Play, Stop } from './model.js';
+import { Model, Paste, Play, Stop, SetParam } from './model.js';
 import { Editor } from './editor.js';
 import { AudioView } from './audioview.js';
 import { TitleView } from './titleview.js';
@@ -73,6 +73,25 @@ document.body.onload = async function ()
     window.addEventListener('NETSYNC_CLOCK_STOP', () => {
         if (netSync.mode == 'client')
             stopPlayback();
+    });
+
+
+    window.addEventListener('NETSYNC_TEMPO', (evt) => {
+        if (netSync.mode != 'client')
+            return;
+
+        let bpm = evt.detail.bpm;
+        if (!isFinite(bpm))
+            return;
+
+        // Apply synced tempo to every Clock node in the patch
+        let nodes = model.state.nodes;
+        for (let nodeId in nodes)
+        {
+            let node = nodes[nodeId];
+            if (node.type == 'Clock')
+                model.update(new SetParam(Number(nodeId), 'value', bpm));
+        }
     });
 
     if (syncMode)
