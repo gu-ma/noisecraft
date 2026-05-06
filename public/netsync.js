@@ -11,6 +11,7 @@ export class NetSync
         this.lastPulseLogTime = 0;
         this.lastPulseTime = 0;
         this.tempoBpm = 0;
+        this.lastTempoEmit = 0;
 
         if (this.mode != 'off')
             this.connect();
@@ -61,6 +62,7 @@ export class NetSync
                 this.lastPulseLogTime = 0;
                 this.lastPulseTime = 0;
                 this.tempoBpm = 0;
+                this.lastTempoEmit = 0;
                 this.emit('NETSYNC_CLOCK_STOP', msg);
             }
             if (msg.type == 'CLOCK_PULSE' && this.mode == 'client')
@@ -72,9 +74,21 @@ export class NetSync
                     let bpm = 60000 / (pulseMs * 24);
                     if (isFinite(bpm) && bpm > 20 && bpm < 400)
                     {
-                        // Smooth tempo estimate to reduce jitter
-                        this.tempoBpm = this.tempoBpm? (this.tempoBpm * 0.9 + bpm * 0.1):bpm;
-                        this.emit('NETSYNC_TEMPO', { bpm: this.tempoBpm });
+                        // Strong smoothing for network jitter resistance.
+                        // Lower alpha = less wobble in the displayed/applied BPM.
+                        const alpha = 0.02;
+                        this.tempoBpm = this.tempoBpm? (this.tempoBpm * (1 - alpha) + bpm * alpha):bpm;
+
+                        // Emit at most once per quarter note (24 PPQ),
+                        // and only if BPM changed meaningfully.
+                        if ((this.pulseCount % 24) == 0)
+                        {
+                            if (!this.lastTempoEmit || Math.abs(this.tempoBpm - this.lastTempoEmit) >= 0.1)
+                            {
+                                this.lastTempoEmit = this.tempoBpm;
+                                this.emit('NETSYNC_TEMPO', { bpm: this.tempoBpm });
+                            }
+                        }
                     }
                 }
                 this.lastPulseTime = now;
