@@ -84,7 +84,7 @@ async function promptOpenRouter(messages, options = {})
         throw TypeError('messages must be a non-empty array');
 
     let modelName = options.model || process.env.OPENROUTER_MODEL || 'moonshotai/kimi-k2.6';
-    let maxTokens = options.maxTokens || 1400;
+    let maxTokens = options.maxTokens || 20000;
     let temperature = options.temperature ?? 0.4;
 
     async function callOpenRouter(useJSONFormat)
@@ -95,6 +95,11 @@ async function promptOpenRouter(messages, options = {})
             messages: messages,
             temperature: temperature,
             max_tokens: maxTokens,
+            reasoning: {
+                effort: 'medium',
+                exclude: true,
+                enabled: true,
+            },
         };
 
         if (options.preset)
