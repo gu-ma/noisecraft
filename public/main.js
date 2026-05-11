@@ -336,6 +336,67 @@ async function requestAIGeneration(prompt)
     return response.json();
 }
 
+
+
+async function requestAIGenerationStream(prompt, handlers = {})
+{
+    let response = await fetch('/llm/prompt/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok || !response.body)
+        throw TypeError('AI stream request failed');
+
+    let reader = response.body.getReader();
+    let decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true)
+    {
+        let { done, value } = await reader.read();
+        if (done)
+            break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        while (true)
+        {
+            let splitIdx = buffer.indexOf('\n\n');
+            if (splitIdx == -1)
+                break;
+
+            let rawEvent = buffer.slice(0, splitIdx);
+            buffer = buffer.slice(splitIdx + 2);
+
+            let evType = 'message';
+            let evData = '';
+
+            for (let line of rawEvent.split('\n'))
+            {
+                if (line.startsWith('event:'))
+                    evType = line.slice(6).trim();
+                if (line.startsWith('data:'))
+                    evData += line.slice(5).trim();
+            }
+
+            let payload = {};
+            if (evData)
+                payload = JSON.parse(evData);
+
+            if (evType == 'token' && handlers.onToken)
+                handlers.onToken(payload);
+            if (evType == 'status' && handlers.onStatus)
+                handlers.onStatus(payload);
+            if (evType == 'result' && handlers.onResult)
+                handlers.onResult(payload);
+            if (evType == 'error' && handlers.onError)
+                handlers.onError(payload);
+        }
+    }
+}
+
 function showGenerateDialog()
 {
     let dialog = new Dialog('Generate with AI');
@@ -355,8 +416,12 @@ function showGenerateDialog()
     previewPre.style.maxHeight = '180px';
     previewPre.style.overflowY = 'auto';
     previewPre.style.fontSize = '12px';
-    previewPre.textContent = 'Click Generate to preview a project.';
+    previewPre.textContent = 'Click Generate to start streaming output.';
     dialog.appendChild(previewPre);
+
+    let statusP = document.createElement('p');
+    statusP.textContent = 'Status: idle';
+    dialog.appendChild(statusP);
 
     let generateBtn = document.createElement('button');
     generateBtn.className = 'form_btn';
@@ -392,17 +457,40 @@ function showGenerateDialog()
                 return;
             }
 
-            previewPre.textContent = 'Generating...';
-            let result = await requestAIGeneration(prompt);
-            generatedProject = result.project;
-            previewPre.textContent = JSON.stringify(generatedProject, null, 2);
-            useBtn.disabled = false;
+            generatedProject = null;
+            useBtn.disabled = true;
+            previewPre.textContent = '';
+            statusP.textContent = 'Status: generating...';
+
+            await requestAIGenerationStream(prompt, {
+                onToken: (msg) =>
+                {
+                    previewPre.textContent += msg.text || '';
+                    previewPre.scrollTop = previewPre.scrollHeight;
+                },
+                onStatus: (msg) =>
+                {
+                    statusP.textContent = `Status: ${msg.stage || 'working'}`;
+                },
+                onResult: (msg) =>
+                {
+                    generatedProject = msg.project;
+                    previewPre.textContent = JSON.stringify(generatedProject, null, 2);
+                    statusP.textContent = `Status: done (${msg.elapsedMs || 0}ms)`;
+                    useBtn.disabled = false;
+                },
+                onError: (msg) =>
+                {
+                    statusP.textContent = 'Status: error';
+                    throw TypeError((msg.error || 'Generation failed') + (msg.requestId? ` (requestId=${msg.requestId})`:''));
+                }
+            });
         }
         catch (e)
         {
             console.log(e);
-            previewPre.textContent = 'No preview available.';
             useBtn.disabled = true;
+            statusP.textContent = 'Status: error';
             dialog.showError(e.message || 'Generation failed. Check server logs/API key.');
         }
     }
