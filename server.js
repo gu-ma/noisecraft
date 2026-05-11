@@ -36,6 +36,27 @@ var jsonParser = bodyParser.json({limit: '1mb'});
 
 const openRouterAPIURL = 'https://openrouter.ai/api/v1/chat/completions';
 
+function extractMessageText(message)
+{
+    if (!message)
+        return '';
+
+    if (typeof message.content === 'string')
+        return message.content;
+
+    if (message.content instanceof Array)
+    {
+        let parts = message.content
+            .map(part => (typeof part?.text == 'string')? part.text:'')
+            .filter(Boolean);
+
+        return parts.join('\n').trim();
+    }
+
+    return '';
+}
+
+
 async function promptOpenRouter(messages, options = {})
 {
     let apiKey = process.env.OPENROUTER_API_KEY;
@@ -49,32 +70,48 @@ async function promptOpenRouter(messages, options = {})
     let maxTokens = options.maxTokens || 1400;
     let temperature = options.temperature ?? 0.4;
 
-    let response = await fetch(openRouterAPIURL, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            ...(process.env.OPENROUTER_SITE_URL? { 'HTTP-Referer': process.env.OPENROUTER_SITE_URL }: {}),
-            ...(process.env.OPENROUTER_SITE_NAME? { 'X-Title': process.env.OPENROUTER_SITE_NAME }: {}),
-        },
-        body: JSON.stringify({
+    async function callOpenRouter(useJSONFormat)
+    {
+        let payload = {
             model: modelName,
             messages: messages,
             temperature: temperature,
             max_tokens: maxTokens,
-            response_format: { type: 'json_object' },
-        })
-    });
+        };
 
-    if (!response.ok)
-    {
-        let errText = await response.text();
-        throw TypeError(`openrouter error (${response.status}): ${errText.slice(0, 300)}`);
+        if (useJSONFormat)
+            payload.response_format = { type: 'json_object' };
+
+        let response = await fetch(openRouterAPIURL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                ...(process.env.OPENROUTER_SITE_URL? { 'HTTP-Referer': process.env.OPENROUTER_SITE_URL }: {}),
+                ...(process.env.OPENROUTER_SITE_NAME? { 'X-Title': process.env.OPENROUTER_SITE_NAME }: {}),
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok)
+        {
+            let errText = await response.text();
+            throw TypeError(`openrouter error (${response.status}): ${errText.slice(0, 300)}`);
+        }
+
+        let data = await response.json();
+        let msg = extractMessageText(data?.choices?.[0]?.message);
+
+        return { data, msg };
     }
 
-    let data = await response.json();
-    let msg = data?.choices?.[0]?.message?.content;
-    if (typeof msg !== 'string' || msg.length == 0)
+    let { data, msg } = await callOpenRouter(true);
+
+    // Some models/providers don't support response_format reliably.
+    if (!msg)
+        ({ data, msg } = await callOpenRouter(false));
+
+    if (!msg)
         throw TypeError('openrouter returned empty message');
 
     return {
