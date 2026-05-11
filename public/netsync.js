@@ -2,8 +2,8 @@ export class NetSync
 {
     constructor()
     {
-        this.mode = localStorage.getItem('net_sync_mode') || 'off';
-        this.sessionId = localStorage.getItem('net_sync_session') || 'default';
+        this.mode = 'off';
+        this.sessionId = 'default';
         this.ws = null;
         this.serverStartTime = 0;
         this.localStartTime = 0;
@@ -14,8 +14,6 @@ export class NetSync
         this.lastTempoEmit = 0;
         this.lastHostPulseTime = 0;
 
-        if (this.mode != 'off')
-            this.connect();
     }
 
     connect()
@@ -31,7 +29,9 @@ export class NetSync
         }
 
         let proto = (location.protocol === 'https:')? 'wss':'ws';
-        this.ws = new WebSocket(`${proto}://${location.host}/ws-clock`);
+        const params = new URLSearchParams(location.search);
+        const wsPath = params.get('net_ws_path') || '/ws-clock';
+        this.ws = new WebSocket(`${proto}://${location.host}${wsPath}`);
 
         this.ws.onopen = () => {
             this.send({ type: 'JOIN_CLOCK_SESSION', sessionId: this.sessionId, role: this.mode });
