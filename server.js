@@ -1201,6 +1201,7 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
 
     try
     {
+        console.log(`[${reqId}] /llm/prompt/stream start`);
         let prompt = req.body.prompt;
         if (typeof prompt != 'string' || prompt.length == 0 || prompt.length > 4000)
         {
@@ -1249,6 +1250,7 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
         let buffer = '';
         let fullText = '';
         let usage = null;
+        let tokenEvents = 0;
 
         while (true)
         {
@@ -1275,17 +1277,22 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
                 if (delta)
                 {
                     fullText += delta;
+                    tokenEvents += 1;
                     sendEvent('token', { text: delta, requestId: reqId });
                 }
             }
         }
 
+        console.log(`[${reqId}] stream generation complete, parsing (${fullText.length} chars, ${tokenEvents} token events)`);
         sendEvent('status', { stage: 'parsing', requestId: reqId });
         let project = await parseOrRepairGeneratedProject(fullText, modelName, reqId);
         project = coerceGeneratedProject(project);
         autoConnectGeneratedProject(project);
         model.normalizeProject(project);
         model.validateProject(project);
+
+        let reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens;
+        console.log(`[${reqId}] /llm/prompt/stream success in ${Date.now() - t0}ms model=${modelName} nodes=${Object.keys(project.nodes).length} reasoning_tokens=${reasoningTokens ?? 'n/a'}`);
 
         sendEvent('result', {
             project,
@@ -1298,7 +1305,7 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
     }
     catch (e)
     {
-        console.log(`[${reqId}] llm stream failed`);
+        console.log(`[${reqId}] /llm/prompt/stream failed after ${Date.now() - t0}ms`);
         console.log(e);
         sendEvent('error', { error: (e && e.message)? e.message:'stream failed', requestId: reqId });
         return res.end();
