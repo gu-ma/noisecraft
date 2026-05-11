@@ -1273,7 +1273,13 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
 
                 let chunk = JSON.parse(data);
                 usage = chunk.usage || usage;
-                let delta = chunk.choices?.[0]?.delta?.content || '';
+                let deltaObj = chunk.choices?.[0]?.delta || {};
+                let delta = deltaObj.content || '';
+                let reasoningDelta = deltaObj.reasoning || deltaObj.reasoning_content || '';
+
+                if (reasoningDelta)
+                    sendEvent('reasoning', { text: reasoningDelta, requestId: reqId });
+
                 if (delta)
                 {
                     fullText += delta;

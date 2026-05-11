@@ -187,8 +187,7 @@ window.onmousemove = handleMouseEvent;
 window.onkeydown = function (event)
 {
     // If a text input box is active, do nothing
-    if (document.activeElement &&
-        document.activeElement.nodeName.toLowerCase() == "input")
+    if (anyInputActive())
         return;
 
     // Spacebar triggers play/stop
@@ -387,6 +386,8 @@ async function requestAIGenerationStream(prompt, handlers = {})
 
             if (evType == 'token' && handlers.onToken)
                 handlers.onToken(payload);
+            if (evType == 'reasoning' && handlers.onReasoning)
+                handlers.onReasoning(payload);
             if (evType == 'status' && handlers.onStatus)
                 handlers.onStatus(payload);
             if (evType == 'result' && handlers.onResult)
@@ -422,6 +423,14 @@ function showGenerateDialog()
     let statusP = document.createElement('p');
     statusP.textContent = 'Status: idle';
     dialog.appendChild(statusP);
+
+    let reasoningPre = document.createElement('pre');
+    reasoningPre.style.whiteSpace = 'pre-wrap';
+    reasoningPre.style.maxHeight = '120px';
+    reasoningPre.style.overflowY = 'auto';
+    reasoningPre.style.fontSize = '11px';
+    reasoningPre.textContent = '';
+    dialog.appendChild(reasoningPre);
 
     let generateBtn = document.createElement('button');
     generateBtn.className = 'form_btn';
@@ -460,6 +469,7 @@ function showGenerateDialog()
             generatedProject = null;
             useBtn.disabled = true;
             previewPre.textContent = '';
+            reasoningPre.textContent = '';
             statusP.textContent = 'Status: generating...';
 
             await requestAIGenerationStream(prompt, {
@@ -467,6 +477,12 @@ function showGenerateDialog()
                 {
                     previewPre.textContent += msg.text || '';
                     previewPre.scrollTop = previewPre.scrollHeight;
+                },
+                onReasoning: (msg) =>
+                {
+                    reasoningPre.textContent += msg.text || '';
+                    reasoningPre.scrollTop = reasoningPre.scrollHeight;
+                    statusP.textContent = `Status: reasoning (${reasoningPre.textContent.length} chars)`;
                 },
                 onStatus: (msg) =>
                 {
