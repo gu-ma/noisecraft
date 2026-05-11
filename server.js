@@ -258,6 +258,27 @@ ${text}`;
     }
 }
 
+
+function coerceParamValue(value, defaultValue)
+{
+    if (defaultValue === null)
+        return (value === null)? null:defaultValue;
+
+    if (typeof defaultValue == 'number')
+    {
+        let num = (typeof value == 'number')? value:Number(value);
+        return Number.isFinite(num)? num:defaultValue;
+    }
+
+    if (typeof defaultValue == 'string')
+        return (typeof value == 'string')? value:defaultValue;
+
+    if (typeof defaultValue == 'boolean')
+        return (typeof value == 'boolean')? value:defaultValue;
+
+    return (value === undefined)? defaultValue:value;
+}
+
 function coerceGeneratedProject(project)
 {
     if (!(project instanceof Object))
@@ -299,7 +320,7 @@ function coerceGeneratedProject(project)
         for (let param of schema.params)
         {
             let val = node.params?.[param.name];
-            outNode.params[param.name] = (val === undefined)? param.default:val;
+            outNode.params[param.name] = coerceParamValue(val, param.default);
         }
 
         // preserve valid schema state fields when present
