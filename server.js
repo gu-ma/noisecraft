@@ -1179,6 +1179,132 @@ app.delete('/projects', async function (req, res)
 
 
 
+
+
+app.post('/llm/prompt/stream', jsonParser, async function (req, res)
+{
+    let reqId = nextLLMReqId();
+    let t0 = Date.now();
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    function sendEvent(type, payload)
+    {
+        res.write(`event: ${type}
+`);
+        res.write(`data: ${JSON.stringify(payload)}
+
+`);
+    }
+
+    try
+    {
+        let prompt = req.body.prompt;
+        if (typeof prompt != 'string' || prompt.length == 0 || prompt.length > 4000)
+        {
+            sendEvent('error', { error: 'invalid prompt', requestId: reqId });
+            return res.end();
+        }
+
+        let apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey)
+            throw TypeError('missing OPENROUTER_API_KEY');
+
+        let modelName = req.body.model || process.env.OPENROUTER_MODEL || 'moonshotai/kimi-k2.6';
+        let presetName = req.body.preset || process.env.OPENROUTER_PRESET || 'Noisecrafter';
+        let maxTokens = req.body.maxTokens || 20000;
+        let temperature = req.body.temperature ?? 0.4;
+
+        let payload = {
+            model: modelName,
+            preset: presetName,
+            messages: [
+                { role: 'user', content: 'Generate one complete NoiseCraft project JSON from this request: ' + prompt }
+            ],
+            temperature: temperature,
+            max_tokens: maxTokens,
+            stream: true,
+            reasoning: { effort: 'medium', exclude: false, enabled: true },
+            include_reasoning: true,
+        };
+
+        let response = await fetch(openRouterAPIURL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                ...(process.env.OPENROUTER_SITE_URL? { 'HTTP-Referer': process.env.OPENROUTER_SITE_URL }: {}),
+                ...(process.env.OPENROUTER_SITE_NAME? { 'X-Title': process.env.OPENROUTER_SITE_NAME }: {}),
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok || !response.body)
+            throw TypeError(`openrouter stream error (${response.status})`);
+
+        let reader = response.body.getReader();
+        let decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        let usage = null;
+
+        while (true)
+        {
+            let { done, value } = await reader.read();
+            if (done)
+                break;
+
+            buffer += decoder.decode(value, { stream: true });
+            let lines = buffer.split('\n');
+            buffer = lines.pop();
+
+            for (let line of lines)
+            {
+                if (!line.startsWith('data:'))
+                    continue;
+
+                let data = line.slice(5).trim();
+                if (!data || data == '[DONE]')
+                    continue;
+
+                let chunk = JSON.parse(data);
+                usage = chunk.usage || usage;
+                let delta = chunk.choices?.[0]?.delta?.content || '';
+                if (delta)
+                {
+                    fullText += delta;
+                    sendEvent('token', { text: delta, requestId: reqId });
+                }
+            }
+        }
+
+        sendEvent('status', { stage: 'parsing', requestId: reqId });
+        let project = await parseOrRepairGeneratedProject(fullText, modelName, reqId);
+        project = coerceGeneratedProject(project);
+        autoConnectGeneratedProject(project);
+        model.normalizeProject(project);
+        model.validateProject(project);
+
+        sendEvent('result', {
+            project,
+            model: modelName,
+            usage,
+            requestId: reqId,
+            elapsedMs: Date.now() - t0,
+        });
+        return res.end();
+    }
+    catch (e)
+    {
+        console.log(`[${reqId}] llm stream failed`);
+        console.log(e);
+        sendEvent('error', { error: (e && e.message)? e.message:'stream failed', requestId: reqId });
+        return res.end();
+    }
+});
+
 app.post('/llm/prompt', jsonParser, async function (req, res)
 {
     let reqId = nextLLMReqId();
