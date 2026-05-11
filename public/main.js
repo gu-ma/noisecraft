@@ -1,11 +1,12 @@
 import { anyInputActive } from './utils.js';
 import { Dialog, errorDialog } from './dialog.js';
-import { Model, Paste, Play, Stop } from './model.js';
+import { Model, Paste, Play, Stop, SetParam } from './model.js';
 import { Editor } from './editor.js';
 import { AudioView } from './audioview.js';
 import { TitleView } from './titleview.js';
 import * as session from './session.js';
 import * as sharing from './sharing.js';
+import { netSync } from './netsync.js';
 
 // Project title input
 let inputProjectTitle = document.getElementById('project_title');
@@ -16,6 +17,7 @@ let btnSave = document.getElementById('btn_save');
 let btnShare = document.getElementById('btn_share');
 let btnPlay = document.getElementById('btn_play');
 let btnStop = document.getElementById('btn_stop');
+let netSyncBadge = document.getElementById('net_sync_badge');
 
 // Project model/state
 let model = new Model();
@@ -32,9 +34,77 @@ let titleView = new TitleView(model);
 // Most recent location of a mouse or touch event
 let cursor = { x: 0, y: 0 };
 
+
+function updateNetSyncBadge()
+{
+    let mode = netSync.mode || 'off';
+    let state = 'disconnected';
+
+    if (mode != 'off' && netSync.ws)
+    {
+        if (netSync.ws.readyState == WebSocket.OPEN)
+            state = 'connected';
+        else if (netSync.ws.readyState == WebSocket.CONNECTING)
+            state = 'connecting';
+    }
+
+    netSyncBadge.className = `status_badge status_badge_${mode}`;
+    netSyncBadge.textContent = `NetSync: ${mode} (${state})`;
+}
+
 document.body.onload = async function ()
 {
     //browserWarning();
+
+    // Optional network clock sync config via URL params:
+    // ?net_sync=off|host|client&net_session=my-room
+    const params = new URLSearchParams(location.search);
+    const syncMode = params.get('net_sync');
+    const syncSession = params.get('net_session');
+    updateNetSyncBadge();
+    setInterval(updateNetSyncBadge, 1000);
+
+
+    window.addEventListener('NETSYNC_CLOCK_START', () => {
+        if (netSync.mode == 'client')
+            startPlayback();
+    });
+
+    window.addEventListener('NETSYNC_CLOCK_STOP', () => {
+        if (netSync.mode == 'client')
+            stopPlayback();
+    });
+
+
+    window.addEventListener('NETSYNC_TEMPO', (evt) => {
+        if (netSync.mode != 'client')
+            return;
+
+        let bpm = evt.detail.bpm;
+        if (!isFinite(bpm))
+            return;
+
+        // Apply synced tempo to every Clock node in the patch
+        let nodes = model.state.nodes;
+        for (let nodeId in nodes)
+        {
+            let node = nodes[nodeId];
+            if (node.type == 'Clock' && editor.nodes.has(nodeId))
+                model.update(new SetParam(nodeId, 'value', bpm));
+        }
+    });
+
+    if (syncMode)
+    {
+        if (syncMode == 'off' || syncMode == 'host' || syncMode == 'client')
+        {
+            netSync.configure(syncMode, syncSession || 'default');
+        }
+        else
+        {
+            console.warn(`[NetSync] ignoring invalid net_sync mode: ${syncMode}`);
+        }
+    }
 
     // Parse the projectId from the path
     let path = location.pathname;

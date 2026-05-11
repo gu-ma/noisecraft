@@ -5,6 +5,7 @@ import * as model from './model.js';
 import * as music from './music.js';
 import { midi } from './midi.js';
 import { Knob } from './knob.js';
+import { netSync } from './netsync.js';
 
 export class Editor
 {
@@ -1423,6 +1424,7 @@ class ClockOut extends UINode
 
         // Broadcast a clock pulse
         midi.broadcast([0xF8], sendTime);
+        netSync.sendPulse(pulseTime);
 
         this.lastTime = pulseTime;
         this.lastSent = sendTime;
@@ -1432,6 +1434,7 @@ class ClockOut extends UINode
     {
         // Send a MIDI start message
         midi.broadcast([0xFA]);
+        netSync.sendStart();
 
         this.lastTime = 0;
         this.lastSent = 0;
@@ -1441,6 +1444,7 @@ class ClockOut extends UINode
     {
         // Send a MIDI stop message
         midi.broadcast([0xFC]);
+        netSync.sendStop();
 
         this.lastTime = 0;
         this.lastSent = 0;
