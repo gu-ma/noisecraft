@@ -24,6 +24,7 @@
   "scripts": {
     "start": "node server.js",
     "watch": "nodemon server.js",
-    "build": "esbuild public/main.js public/audioworklet.js public/help.js public/browse.js --bundle --outdir=deploy/public"
+    "build": "esbuild public/main.js public/audioworklet.js public/help.js public/browse.js --bundle --outdir=deploy/public",
+    "build:pages": "rm -rf deploy && mkdir -p deploy/public && cp -R public/. deploy/public && npm run build"
   }
 }
