@@ -439,12 +439,56 @@ function autoConnectGeneratedProject(project)
     }
 }
 
+
+function buildNoiseCraftExamples()
+{
+    let ex1 = {
+        title: 'Template Subtractive Lead',
+        nodes: {
+            '0': { type: 'Knob', name: 'Pitch', x: 40, y: 40, ins: [], inNames: [], outNames: [''], params: { minVal: 55, maxVal: 440, value: 110, deviceId: null, controlId: null } },
+            '1': { type: 'Knob', name: 'Cutoff', x: 40, y: 120, ins: [], inNames: [], outNames: [''], params: { minVal: 0.05, maxVal: 1, value: 0.4, deviceId: null, controlId: null } },
+            '2': { type: 'Knob', name: 'Reso', x: 40, y: 200, ins: [], inNames: [], outNames: [''], params: { minVal: 0, maxVal: 1, value: 0.2, deviceId: null, controlId: null } },
+            '3': { type: 'Saw', name: 'Saw', x: 260, y: 80, ins: [['0', 0]], inNames: ['freq'], outNames: ['out'], params: { minVal: -0.8, maxVal: 0.8 } },
+            '4': { type: 'Filter', name: 'Filter', x: 460, y: 80, ins: [['3', 0], ['1', 0], ['2', 0]], inNames: ['in', 'cutoff', 'reso'], outNames: ['out'], params: {} },
+            '5': { type: 'AudioOut', name: 'Audio Out', x: 700, y: 80, ins: [['4', 0], ['4', 0]], inNames: ['left', 'right'], outNames: [], params: {} }
+        }
+    };
+
+    let ex2 = {
+        title: 'Template Ambient Pad',
+        nodes: {
+            '0': { type: 'Knob', name: 'Base Pitch', x: 40, y: 40, ins: [], inNames: [], outNames: [''], params: { minVal: 40, maxVal: 220, value: 90, deviceId: null, controlId: null } },
+            '1': { type: 'Knob', name: 'Move Rate', x: 40, y: 120, ins: [], inNames: [], outNames: [''], params: { minVal: 0.01, maxVal: 2, value: 0.15, deviceId: null, controlId: null } },
+            '2': { type: 'Knob', name: 'Depth', x: 40, y: 200, ins: [], inNames: [], outNames: [''], params: { minVal: 0, maxVal: 20, value: 6, deviceId: null, controlId: null } },
+            '3': { type: 'Sine', name: 'LFO', x: 260, y: 200, ins: [['1', 0], null], inNames: ['freq', 'sync'], outNames: ['out'], params: { minVal: -1, maxVal: 1 } },
+            '4': { type: 'Mul', name: 'Depth Mul', x: 420, y: 200, ins: [['3', 0], ['2', 0]], inNames: ['in0', 'in1'], outNames: ['out'], params: {} },
+            '5': { type: 'Add', name: 'Pitch Sum', x: 580, y: 130, ins: [['0', 0], ['4', 0]], inNames: ['in0', 'in1'], outNames: ['out'], params: {} },
+            '6': { type: 'Tri', name: 'Tri', x: 760, y: 80, ins: [['5', 0]], inNames: ['freq'], outNames: ['out'], params: { minVal: -0.7, maxVal: 0.7 } },
+            '7': { type: 'Delay', name: 'Delay', x: 940, y: 80, ins: [['6', 0], null], inNames: ['in', 'time'], outNames: ['out'], params: {} },
+            '8': { type: 'AudioOut', name: 'Audio Out', x: 1120, y: 80, ins: [['7', 0], ['7', 0]], inNames: ['left', 'right'], outNames: [], params: {} }
+        }
+    };
+
+    return JSON.stringify([ex1, ex2]);
+}
+
 function buildNoiseCraftSystemPrompt()
 {
     let nodeCatalog = JSON.stringify(getLLMNodeCatalog());
+    let examples = buildNoiseCraftExamples();
 
     return (
-        'You are a NoiseCraft patch generator. Return JSON only, no markdown. '        + 'The response must be a valid project object with exactly keys "title" and "nodes". '        + 'Use only node types present in this catalog: ' + nodeCatalog + '. '        + 'Each node must include: type, name, x, y, ins, inNames, outNames, params. '        + 'Node IDs must be numeric strings like "0", "1". '        + 'Connections in ins must be null or ["sourceNodeId", outputPortIndex]. '        + 'Do not include internal nodes or extra properties. '        + 'Always include one AudioOut node and connect audible signal to both left and right inputs.'
+        'You are a NoiseCraft instrument generator. Return JSON only, no markdown. '
+        + 'The response must be a valid project object with exactly keys "title" and "nodes". '
+        + 'Use only node types present in this catalog: ' + nodeCatalog + '. '
+        + 'Each node must include: type, name, x, y, ins, inNames, outNames, params. '
+        + 'Node IDs must be numeric strings like "0", "1". '
+        + 'Connections in ins must be null or ["sourceNodeId", outputPortIndex]. '
+        + 'Do not include internal nodes or extra properties. '
+        + 'Always include one AudioOut node and connect audible signal to both left and right inputs. '
+        + 'IMPORTANT: include at least 3 Knob nodes, connect all knobs to meaningful targets, and place knobs on the left side (x <= 200) for visibility. '
+        + 'Prefer Knob over Const for user controls. '
+        + 'Here are canonical examples to imitate for structure, routing, and knob usage: ' + examples + '.'
     );
 }
 
