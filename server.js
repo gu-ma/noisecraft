@@ -214,6 +214,64 @@ function coerceGeneratedProject(project)
     return project;
 }
 
+
+function autoConnectGeneratedProject(project)
+{
+    let nodeIds = Object.keys(project.nodes);
+    if (!nodeIds.length)
+        return;
+
+    let hasConnection = false;
+    for (let nodeId of nodeIds)
+    {
+        let node = project.nodes[nodeId];
+        if (node.ins.some(input => input !== null))
+        {
+            hasConnection = true;
+            break;
+        }
+    }
+
+    if (hasConnection)
+        return;
+
+    let audioOutId = null;
+    for (let nodeId of nodeIds)
+    {
+        if (project.nodes[nodeId].type == 'AudioOut')
+        {
+            audioOutId = nodeId;
+            break;
+        }
+    }
+
+    let synthNodes = nodeIds
+        .filter(nodeId => nodeId != audioOutId)
+        .filter(nodeId => project.nodes[nodeId].outNames.length > 0)
+        .sort((a, b) => project.nodes[a].x - project.nodes[b].x);
+
+    for (let i = 1; i < synthNodes.length; ++i)
+    {
+        let srcId = synthNodes[i - 1];
+        let dstId = synthNodes[i];
+        let dst = project.nodes[dstId];
+
+        if (dst.ins.length > 0)
+            dst.ins[0] = [srcId, 0];
+    }
+
+    if (audioOutId !== null && synthNodes.length)
+    {
+        let srcId = synthNodes[synthNodes.length - 1];
+        let out = project.nodes[audioOutId];
+
+        if (out.ins.length > 0)
+            out.ins[0] = [srcId, 0];
+        if (out.ins.length > 1)
+            out.ins[1] = [srcId, 0];
+    }
+}
+
 function buildNoiseCraftSystemPrompt()
 {
     let nodeCatalog = JSON.stringify(getLLMNodeCatalog());
@@ -1042,6 +1100,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
 
         let project = JSON.parse(llmRes.content);
         project = coerceGeneratedProject(project);
+        autoConnectGeneratedProject(project);
         model.normalizeProject(project);
         model.validateProject(project);
 
