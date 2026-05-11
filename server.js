@@ -25,6 +25,8 @@ const clockSessions = new Map();
 
 let llmReqCounter = 0;
 const exampleDirPath = path.join(process.cwd(), 'examples');
+const reasoningEnabled = process.env.OPENROUTER_ENABLE_REASONING == '1';
+const reasoningEffort = process.env.OPENROUTER_REASONING_EFFORT || 'low';
 
 function nextLLMReqId()
 {
@@ -96,13 +98,17 @@ async function promptOpenRouter(messages, options = {})
             messages: messages,
             temperature: temperature,
             max_tokens: maxTokens,
-            reasoning: {
-                effort: 'medium',
+            include_reasoning: reasoningEnabled,
+        };
+
+        if (reasoningEnabled)
+        {
+            payload.reasoning = {
+                effort: reasoningEffort,
                 exclude: false,
                 enabled: true,
-            },
-            include_reasoning: true,
-        };
+            };
+        }
 
         if (options.preset)
             payload.preset = options.preset;
@@ -1371,9 +1377,17 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
             temperature: temperature,
             max_tokens: maxTokens,
             stream: true,
-            reasoning: { effort: 'medium', exclude: false, enabled: true },
-            include_reasoning: true,
+            include_reasoning: reasoningEnabled,
         };
+
+        if (reasoningEnabled)
+        {
+            payload.reasoning = {
+                effort: reasoningEffort,
+                exclude: false,
+                enabled: true,
+            };
+        }
 
         let response = await fetch(openRouterAPIURL, {
             method: 'POST',
