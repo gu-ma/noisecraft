@@ -316,6 +316,7 @@ async function requestAIGeneration(prompt, options = {})
             prompt,
             examples: options.examples || [],
             remixMode: options.remixMode || 'balanced',
+            model: options.model || '',
         }),
     });
 
@@ -350,6 +351,7 @@ async function requestAIGenerationStream(prompt, handlers = {}, options = {})
             prompt,
             examples: options.examples || [],
             remixMode: options.remixMode || 'balanced',
+            model: options.model || '',
         }),
     });
 
@@ -447,6 +449,32 @@ function showGenerateDialog()
     }
     dialog.appendChild(remixModeSelect);
 
+    let modelLabel = document.createElement('p');
+    modelLabel.textContent = 'Model:';
+    dialog.appendChild(modelLabel);
+
+    let modelSelect = document.createElement('select');
+    modelSelect.style.width = '95%';
+    for (let modelName of [
+        'google/gemini-3.1-flash-lite',
+        'moonshotai/kimi-k2.6',
+        'qwen/qwen3.6-35b-a3b',
+        'qwen/qwen3.6-27b',
+        'qwen/qwen3.6-flash',
+        'openai/gpt-5.3-codex',
+        'openai/gpt-5.4',
+        'openai/gpt-5.4-mini',
+    ])
+    {
+        let option = document.createElement('option');
+        option.value = modelName;
+        option.textContent = modelName;
+        if (modelName == 'moonshotai/kimi-k2.6')
+            option.selected = true;
+        modelSelect.appendChild(option);
+    }
+    dialog.appendChild(modelSelect);
+
     let previewPre = document.createElement('pre');
     previewPre.style.whiteSpace = 'pre-wrap';
     previewPre.style.maxHeight = '180px';
@@ -524,6 +552,7 @@ function showGenerateDialog()
             statusP.textContent = 'Status: generating...';
             let selectedExamples = [...exampleSelect.selectedOptions].map(opt => opt.value).slice(0, 4);
             let remixMode = remixModeSelect.value || 'balanced';
+            let selectedModel = modelSelect.value || 'moonshotai/kimi-k2.6';
 
             await requestAIGenerationStream(prompt, {
                 onToken: (msg) =>
@@ -556,6 +585,7 @@ function showGenerateDialog()
             }, {
                 examples: selectedExamples,
                 remixMode: remixMode,
+                model: selectedModel,
             });
         }
         catch (e)
