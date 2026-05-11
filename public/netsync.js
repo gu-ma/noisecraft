@@ -2,8 +2,8 @@ export class NetSync
 {
     constructor()
     {
-        this.mode = localStorage.getItem('net_sync_mode') || 'off';
-        this.sessionId = localStorage.getItem('net_sync_session') || 'default';
+        this.mode = 'off';
+        this.sessionId = 'default';
         this.ws = null;
         this.serverStartTime = 0;
         this.localStartTime = 0;
@@ -14,8 +14,6 @@ export class NetSync
         this.lastTempoEmit = 0;
         this.lastHostPulseTime = 0;
 
-        if (this.mode != 'off')
-            this.connect();
     }
 
     connect()
