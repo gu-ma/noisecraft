@@ -13,6 +13,7 @@ let inputProjectTitle = document.getElementById('project_title');
 
 // Menu buttons
 let btnOpen = document.getElementById('btn_open');
+let btnLoadURL = document.getElementById('btn_load_url');
 let btnSave = document.getElementById('btn_save');
 let btnShare = document.getElementById('btn_share');
 let btnGenerate = document.getElementById('btn_generate');
@@ -712,6 +713,71 @@ function openModelFile()
     input.click();
 }
 
+async function loadRemoteProjectByRef(projectRef)
+{
+    let response = await fetch('/projects/import_remote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: projectRef }),
+    });
+
+    if (!response.ok)
+        throw TypeError('Remote project import failed');
+
+    let payload = await response.json();
+    if (typeof payload?.data != 'string')
+        throw TypeError('Invalid remote project data');
+
+    importModel(payload.data);
+}
+
+function showLoadURLDialog()
+{
+    let dialog = new Dialog('Load project from URL/ID');
+
+    let p = document.createElement('p');
+    p.textContent = 'Enter a NoiseCraft URL (e.g. https://noisecraft.app/162) or project ID:';
+    dialog.appendChild(p);
+
+    let input = document.createElement('input');
+    input.type = 'text';
+    input.style.width = '95%';
+    input.placeholder = 'https://noisecraft.app/162 or 162';
+    dialog.appendChild(input);
+
+    let loadBtn = document.createElement('button');
+    loadBtn.className = 'form_btn';
+    loadBtn.textContent = 'Load';
+
+    let closeBtn = document.createElement('button');
+    closeBtn.className = 'form_btn';
+    closeBtn.textContent = 'Close';
+    closeBtn.style.marginLeft = '8px';
+
+    loadBtn.onclick = async () =>
+    {
+        try
+        {
+            dialog.hideError();
+            let value = input.value.trim();
+            if (!value)
+                throw TypeError('Please enter a URL or project ID.');
+            await loadRemoteProjectByRef(value);
+            dialog.close();
+        }
+        catch (e)
+        {
+            console.log(e);
+            dialog.showError(e.message || 'Failed to load remote project.');
+        }
+    };
+
+    closeBtn.onclick = () => dialog.close();
+
+    dialog.appendChild(loadBtn);
+    dialog.appendChild(closeBtn);
+}
+
 function saveModelFile()
 {
     // There is no JS API in most browsers to prompt a file download. Chrome has
@@ -846,6 +912,7 @@ function browserWarning()
 }
 
 btnOpen.onclick = openModelFile;
+btnLoadURL.onclick = showLoadURLDialog;
 btnSave.onclick = saveModelFile;
 btnGenerate.onclick = showGenerateDialog;
 btnShare.onclick = shareProject;

@@ -315,6 +315,29 @@ function listExampleProjects()
         .sort();
 }
 
+function parseRemoteProjectRef(projectRef)
+{
+    if (typeof projectRef != 'string')
+        throw TypeError('ref must be a string');
+
+    let trimmed = projectRef.trim();
+    if (!trimmed)
+        throw TypeError('missing project ref');
+
+    if (/^\d+$/.test(trimmed))
+        return Number(trimmed);
+
+    let url = new URL(trimmed);
+    if (url.hostname != 'noisecraft.app')
+        throw TypeError('only noisecraft.app URLs are supported');
+
+    let match = url.pathname.match(/^\/(\d+)$/);
+    if (!match)
+        throw TypeError('invalid remote project URL');
+
+    return Number(match[1]);
+}
+
 function getRemixMode(remixMode)
 {
     if (remixMode === undefined || remixMode === null || remixMode === '')
@@ -1482,6 +1505,38 @@ app.get('/llm/examples', function (req, res)
     {
         console.log(e);
         return res.sendStatus(500);
+    }
+});
+
+app.post('/projects/import_remote', jsonParser, async function (req, res)
+{
+    try
+    {
+        let projectId = parseRemoteProjectRef(req.body?.ref);
+        let response = await fetch(`https://noisecraft.app/projects/${projectId}`);
+        if (!response.ok)
+            throw TypeError(`remote project fetch failed (${response.status})`);
+
+        let row = await response.json();
+        if (typeof row?.data != 'string')
+            throw TypeError('remote project data missing');
+
+        // Ensure the project can load before sending to client
+        let project = JSON.parse(row.data);
+        model.normalizeProject(project);
+        model.validateProject(project);
+
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify({
+            id: projectId,
+            title: row.title || '',
+            data: JSON.stringify(project),
+        }));
+    }
+    catch (e)
+    {
+        console.log(e);
+        return res.sendStatus(400);
     }
 });
 
