@@ -411,6 +411,24 @@ async function requestAIGenerationStream(prompt, handlers = {}, options = {})
 function showGenerateDialog()
 {
     let dialog = new Dialog('Generate with AI');
+    let promptIdeas = [
+        'A bass that moves like a shadow under the floorboards.',
+        'A lead synth that cuts through the night like neon glass.',
+        'A soft pad drifting over a cold lake at dawn.',
+        'A tiny chiptune voice from a forgotten handheld console.',
+        'A deep sub tone felt more than heard.',
+        'A warm sequencer circling like a small constellation.',
+        'A wandering generative melody with no destination.',
+        'A sequencer that sounds like machinery learning to dance.',
+        'A minimal techno pulse, dry and focused.',
+        'A self-playing bassline with a hypnotic heartbeat.',
+        'A hi-hat made from silver static.',
+        'A snare like paper tearing in a tunnel.',
+        'A kick drum from a deep underground room.',
+        'A metallic percussion voice struck in the dark.',
+        'A spacious delay instrument that leaves trails behind itself.',
+        'A square wave lead with toy-like confidence.',
+    ];
 
     let promptLabel = document.createElement('p');
     promptLabel.textContent = 'Describe the instrument/patch you want to generate:';
@@ -421,6 +439,30 @@ function showGenerateDialog()
     textArea.style.width = '95%';
     textArea.placeholder = 'Example: warm analog bass with subtle filter movement';
     dialog.appendChild(textArea);
+
+    let ideasLabel = document.createElement('p');
+    ideasLabel.textContent = 'Prompt inspiration (optional):';
+    dialog.appendChild(ideasLabel);
+
+    let ideasSelect = document.createElement('select');
+    ideasSelect.style.width = '95%';
+    let ideasDefaultOpt = document.createElement('option');
+    ideasDefaultOpt.value = '';
+    ideasDefaultOpt.textContent = '-- Choose an inspiration prompt --';
+    ideasSelect.appendChild(ideasDefaultOpt);
+    for (let idea of promptIdeas)
+    {
+        let option = document.createElement('option');
+        option.value = idea;
+        option.textContent = idea;
+        ideasSelect.appendChild(option);
+    }
+    ideasSelect.onchange = () =>
+    {
+        if (ideasSelect.value)
+            textArea.value = ideasSelect.value;
+    };
+    dialog.appendChild(ideasSelect);
 
     let exampleLabel = document.createElement('p');
     exampleLabel.textContent = 'Reference examples (optional, max 4):';
@@ -469,7 +511,7 @@ function showGenerateDialog()
         let option = document.createElement('option');
         option.value = modelName;
         option.textContent = modelName;
-        if (modelName == 'moonshotai/kimi-k2.6')
+        if (modelName == 'google/gemini-3.1-flash-lite')
             option.selected = true;
         modelSelect.appendChild(option);
     }
@@ -552,7 +594,7 @@ function showGenerateDialog()
             statusP.textContent = 'Status: generating...';
             let selectedExamples = [...exampleSelect.selectedOptions].map(opt => opt.value).slice(0, 4);
             let remixMode = remixModeSelect.value || 'balanced';
-            let selectedModel = modelSelect.value || 'moonshotai/kimi-k2.6';
+            let selectedModel = modelSelect.value || 'google/gemini-3.1-flash-lite';
 
             await requestAIGenerationStream(prompt, {
                 onToken: (msg) =>
