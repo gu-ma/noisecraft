@@ -36,7 +36,7 @@ var jsonParser = bodyParser.json({limit: '1mb'});
 
 const openRouterAPIURL = 'https://openrouter.ai/api/v1/chat/completions';
 
-function extractMessageText(message)
+function extractMessageText(message, choice = null, data = null)
 {
     if (!message)
         return '';
@@ -50,8 +50,15 @@ function extractMessageText(message)
             .map(part => (typeof part?.text == 'string')? part.text:'')
             .filter(Boolean);
 
-        return parts.join('\n').trim();
+        if (parts.length)
+            return parts.join('\n').trim();
     }
+
+    if (typeof choice?.text === 'string' && choice.text.trim())
+        return choice.text.trim();
+
+    if (typeof data?.output_text === 'string' && data.output_text.trim())
+        return data.output_text.trim();
 
     return '';
 }
@@ -100,7 +107,8 @@ async function promptOpenRouter(messages, options = {})
         }
 
         let data = await response.json();
-        let msg = extractMessageText(data?.choices?.[0]?.message);
+        let choice = data?.choices?.[0] || null;
+        let msg = extractMessageText(choice?.message, choice, data);
 
         return { data, msg };
     }
@@ -110,6 +118,22 @@ async function promptOpenRouter(messages, options = {})
     // Some models/providers don't support response_format reliably.
     if (!msg)
         ({ data, msg } = await callOpenRouter(false));
+
+
+    // Fallback to a known-good model if configured model produced no text
+    if (!msg)
+    {
+        let fallbackModel = process.env.OPENROUTER_FALLBACK_MODEL || 'openai/gpt-4o-mini';
+        if (modelName != fallbackModel)
+        {
+            let prevModel = modelName;
+            modelName = fallbackModel;
+            ({ data, msg } = await callOpenRouter(false));
+            if (msg)
+                data.model = data.model || fallbackModel;
+            modelName = prevModel;
+        }
+    }
 
     if (!msg)
         throw TypeError('openrouter returned empty message');
