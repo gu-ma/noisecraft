@@ -157,7 +157,8 @@ function coerceGeneratedProject(project)
         }
 
         // preserve valid schema state fields when present
-        for (let key of schema.state)
+        let stateFields = schema.state || [];
+        for (let key of stateFields)
         {
             if (key in node)
                 outNode[key] = node[key];
