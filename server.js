@@ -97,9 +97,10 @@ async function promptOpenRouter(messages, options = {})
             max_tokens: maxTokens,
             reasoning: {
                 effort: 'medium',
-                exclude: true,
+                exclude: false,
                 enabled: true,
             },
+            include_reasoning: true,
         };
 
         if (options.preset)
@@ -129,6 +130,19 @@ async function promptOpenRouter(messages, options = {})
         let data = await response.json();
         let choice = data?.choices?.[0] || null;
         let msg = extractMessageText(choice?.message, choice, data);
+
+        let reasoningText = (
+            choice?.message?.reasoning
+            || choice?.reasoning
+            || data?.reasoning
+            || ''
+        );
+
+        if (typeof reasoningText == 'string' && reasoningText.trim())
+        {
+            let snippet = reasoningText.trim().slice(0, 600);
+            console.log(`[${reqId}] reasoning snippet: ${snippet}`);
+        }
 
         return { data, msg };
     }
@@ -836,7 +850,6 @@ app.post('/projects', jsonParser, async function (req, res)
         };
 
         res.statusCode = 201;
-        console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
         res.setHeader('Content-Type', 'application/json');
         return res.send(JSON.stringify(resData));
     }
@@ -907,8 +920,6 @@ app.post('/featured/:id', jsonParser, async function (req, res)
                 console.log(err);
                 return res.sendStatus(400);
             }
-
-            console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
         res.setHeader('Content-Type', 'application/json');
             res.send(JSON.stringify(featured));
         }
@@ -929,8 +940,6 @@ app.get('/projects/:id', function (req, res)
         {
             if (err || !row)
                 return res.sendStatus(404);
-
-            console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
         res.setHeader('Content-Type', 'application/json');
             res.send(JSON.stringify(row));
         }
@@ -1002,7 +1011,9 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
         model.normalizeProject(project);
         model.validateProject(project);
 
-        console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
+        let reasoningTokens = llmRes.usage?.completion_tokens_details?.reasoning_tokens;
+        console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length} reasoning_tokens=${reasoningTokens ?? 'n/a'}`);
+
         res.setHeader('Content-Type', 'application/json');
         return res.send(JSON.stringify({
             project: project,
