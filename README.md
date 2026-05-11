@@ -119,7 +119,7 @@ Set your OpenRouter key and run the server:
 export OPENROUTER_API_KEY="<your_key>"
 # Optional:
 # export OPENROUTER_MODEL="moonshotai/kimi-k2.6"
-# export OPENROUTER_PRESET="Noisecrafter"
+# export OPENROUTER_PRESET="@preset/noisecrafter"
 node server.js
 ```
 
@@ -131,7 +131,7 @@ curl -sS -X POST http://localhost:7773/llm/prompt \
   -d '{
     "prompt": "Make a mellow ambient pad with slow movement",
     "model": "moonshotai/kimi-k2.6",
-    "preset": "Noisecrafter",
+    "preset": "@preset/noisecrafter",
     "temperature": 0.3,
     "maxTokens": 1200
   }' | jq

@@ -1213,7 +1213,7 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
             throw TypeError('missing OPENROUTER_API_KEY');
 
         let modelName = req.body.model || process.env.OPENROUTER_MODEL || 'moonshotai/kimi-k2.6';
-        let presetName = req.body.preset || process.env.OPENROUTER_PRESET || 'Noisecrafter';
+        let presetName = req.body.preset || process.env.OPENROUTER_PRESET || '@preset/noisecrafter';
         let maxTokens = req.body.maxTokens || 20000;
         let temperature = req.body.temperature ?? 0.4;
 
@@ -1317,7 +1317,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
         if (typeof prompt != 'string' || prompt.length == 0 || prompt.length > 4000)
             return res.sendStatus(400);
 
-        let presetName = req.body.preset || process.env.OPENROUTER_PRESET || 'Noisecrafter';
+        let presetName = req.body.preset || process.env.OPENROUTER_PRESET || '@preset/noisecrafter';
 
         let llmRes = await promptOpenRouter([
             {
