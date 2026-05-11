@@ -149,6 +149,46 @@ function getLLMNodeCatalog()
 }
 
 
+
+function parseGeneratedProjectText(text)
+{
+    // Try direct parse first
+    try
+    {
+        return JSON.parse(text);
+    }
+    catch (e)
+    {
+        // continue with salvage attempts
+    }
+
+    // Remove markdown fences if present
+    let cleaned = text
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+    try
+    {
+        return JSON.parse(cleaned);
+    }
+    catch (e)
+    {
+        // continue
+    }
+
+    // Extract the largest object-looking slice
+    let first = cleaned.indexOf('{');
+    let last = cleaned.lastIndexOf('}');
+    if (first >= 0 && last > first)
+    {
+        let slice = cleaned.slice(first, last + 1);
+        return JSON.parse(slice);
+    }
+
+    throw SyntaxError('failed to parse generated JSON');
+}
+
 function coerceGeneratedProject(project)
 {
     if (!(project instanceof Object))
@@ -1135,7 +1175,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
             temperature: req.body.temperature,
         });
 
-        let project = JSON.parse(llmRes.content);
+        let project = parseGeneratedProjectText(llmRes.content);
         project = coerceGeneratedProject(project);
         autoConnectGeneratedProject(project);
         model.normalizeProject(project);
