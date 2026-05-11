@@ -187,6 +187,207 @@ async function promptOpenRouter(messages, options = {})
 }
 
 
+
+function parseGeneratedProjectText(text)
+{
+    try
+    {
+        return JSON.parse(text);
+    }
+    catch (e)
+    {
+    }
+
+    let cleaned = text
+        .replace(/```json/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+    try
+    {
+        return JSON.parse(cleaned);
+    }
+    catch (e)
+    {
+    }
+
+    let first = cleaned.indexOf('{');
+    let last = cleaned.lastIndexOf('}');
+    if (first >= 0 && last > first)
+        return JSON.parse(cleaned.slice(first, last + 1));
+
+    throw SyntaxError('failed to parse generated JSON');
+}
+
+async function parseOrRepairGeneratedProject(text, modelName, reqId = 'llm-unknown')
+{
+    try
+    {
+        return parseGeneratedProjectText(text);
+    }
+    catch (e)
+    {
+        let repairPrompt = `Fix this malformed JSON and return ONLY valid JSON. Keep the same semantic content and do not add markdown:
+${text}`;
+        let repaired = await promptOpenRouter([
+            { role: 'system', content: 'You are a JSON repair assistant. Return JSON only.' },
+            { role: 'user', content: repairPrompt },
+        ], {
+            reqId: reqId + '-repair',
+            model: modelName,
+            temperature: 0,
+            maxTokens: 2000,
+        });
+
+        return parseGeneratedProjectText(repaired.content);
+    }
+}
+
+function coerceParamValue(value, defaultValue)
+{
+    if (defaultValue === null)
+        return (value === null)? null:defaultValue;
+
+    if (typeof defaultValue == 'number')
+    {
+        let num = (typeof value == 'number')? value:Number(value);
+        return Number.isFinite(num)? num:defaultValue;
+    }
+
+    if (typeof defaultValue == 'string')
+        return (typeof value == 'string')? value:defaultValue;
+
+    if (typeof defaultValue == 'boolean')
+        return (typeof value == 'boolean')? value:defaultValue;
+
+    return (value === undefined)? defaultValue:value;
+}
+
+function coerceGeneratedProject(project)
+{
+    if (!(project instanceof Object))
+        throw TypeError('generated project must be an object');
+
+    if (typeof project.title != 'string')
+        project.title = 'Generated Patch';
+
+    if (!(project.nodes instanceof Object))
+        throw TypeError('generated project missing nodes');
+
+    let outNodes = {};
+    let keptOldIds = [];
+
+    for (let oldId in project.nodes)
+    {
+        let node = project.nodes[oldId];
+        if (!(node instanceof Object))
+            continue;
+
+        if (typeof node.type != 'string' || !(node.type in model.NODE_SCHEMA))
+            continue;
+
+        let schema = model.NODE_SCHEMA[node.type];
+        if (schema.internal)
+            continue;
+
+        let newId = String(keptOldIds.length);
+        keptOldIds.push(oldId);
+
+        let outNode = {
+            type: node.type,
+            name: (typeof node.name == 'string' && node.name.length)? node.name.slice(0, 12):node.type,
+            x: Number.isFinite(node.x)? Math.round(node.x):0,
+            y: Number.isFinite(node.y)? Math.round(node.y):0,
+            ins: Array(schema.ins.length).fill(null),
+            inNames: schema.ins.map(input => input.name),
+            outNames: schema.outs.map(name => name),
+            params: {},
+        };
+
+        for (let param of schema.params)
+        {
+            let val = node.params?.[param.name];
+            outNode.params[param.name] = coerceParamValue(val, param.default);
+        }
+
+        let stateFields = schema.state || [];
+        for (let key of stateFields)
+        {
+            if (key in node)
+                outNode[key] = node[key];
+        }
+
+        outNodes[newId] = outNode;
+    }
+
+    let idMap = {};
+    for (let i = 0; i < keptOldIds.length; ++i)
+        idMap[keptOldIds[i]] = String(i);
+
+    for (let newId in outNodes)
+    {
+        let oldNode = project.nodes[keptOldIds[Number(newId)]];
+        let newNode = outNodes[newId];
+
+        for (let i = 0; i < newNode.ins.length; ++i)
+        {
+            let inRef = oldNode.ins?.[i];
+            if (!(inRef instanceof Array) || inRef.length != 2)
+                continue;
+
+            let srcNewId = idMap[String(inRef[0])];
+            let outIdx = Number(inRef[1]);
+            if (srcNewId === undefined)
+                continue;
+
+            let srcNode = outNodes[srcNewId];
+            if (!Number.isInteger(outIdx) || outIdx < 0 || outIdx >= srcNode.outNames.length)
+                continue;
+
+            newNode.ins[i] = [srcNewId, outIdx];
+        }
+    }
+
+    project.nodes = outNodes;
+    return project;
+}
+
+function autoConnectGeneratedProject(project)
+{
+    let nodeIds = Object.keys(project.nodes);
+    if (!nodeIds.length)
+        return;
+
+    let hasConnection = nodeIds.some(nodeId => project.nodes[nodeId].ins.some(input => input !== null));
+    if (hasConnection)
+        return;
+
+    let audioOutId = nodeIds.find(nodeId => project.nodes[nodeId].type == 'AudioOut') || null;
+
+    let synthNodes = nodeIds
+        .filter(nodeId => nodeId != audioOutId)
+        .filter(nodeId => project.nodes[nodeId].outNames.length > 0)
+        .sort((a, b) => project.nodes[a].x - project.nodes[b].x);
+
+    for (let i = 1; i < synthNodes.length; ++i)
+    {
+        let srcId = synthNodes[i - 1];
+        let dst = project.nodes[synthNodes[i]];
+        if (dst.ins.length > 0)
+            dst.ins[0] = [srcId, 0];
+    }
+
+    if (audioOutId !== null && synthNodes.length)
+    {
+        let srcId = synthNodes[synthNodes.length - 1];
+        let out = project.nodes[audioOutId];
+        if (out.ins.length > 0)
+            out.ins[0] = [srcId, 0];
+        if (out.ins.length > 1)
+            out.ins[1] = [srcId, 0];
+    }
+}
+
 // Connect to the database
 async function connectDb(dbFilePath)
 {
