@@ -279,7 +279,23 @@ function getExampleProjectText(exampleName)
     return fs.readFileSync(filePath, 'utf8').trim();
 }
 
-function getExampleProjectTexts(body)
+async function getRemoteProjectData(projectId)
+{
+    let response = await fetch(`https://noisecraft.app/projects/${projectId}`);
+    if (!response.ok)
+        throw TypeError(`remote project fetch failed (${response.status})`);
+
+    let row = await response.json();
+    if (typeof row?.data != 'string')
+        throw TypeError('remote project data missing');
+
+    let project = JSON.parse(row.data);
+    model.normalizeProject(project);
+    model.validateProject(project);
+    return JSON.stringify(project);
+}
+
+async function getExampleProjectTexts(body)
 {
     let names = [];
 
@@ -295,6 +311,15 @@ function getExampleProjectTexts(body)
         }
     }
 
+    if (body.remoteExamples instanceof Array)
+    {
+        for (let ref of body.remoteExamples)
+        {
+            if (typeof ref == 'string' && ref.length)
+                names.push(ref);
+        }
+    }
+
     if (!names.length)
         return [];
 
@@ -302,7 +327,16 @@ function getExampleProjectTexts(body)
         throw TypeError('at most 4 examples are allowed');
 
     names = [...new Set(names)];
-    return names.map(name => getExampleProjectText(name));
+    let out = [];
+    for (let name of names)
+    {
+        if (name.endsWith('.ncft'))
+            out.push(getExampleProjectText(name));
+        else
+            out.push(await getRemoteProjectData(parseRemoteProjectRef(name)));
+    }
+
+    return out;
 }
 
 function listExampleProjects()
@@ -1328,7 +1362,7 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
         let maxTokens = req.body.maxTokens || 20000;
         let temperature = req.body.temperature ?? 0.4;
 
-        let exampleTexts = getExampleProjectTexts(req.body);
+        let exampleTexts = await getExampleProjectTexts(req.body);
         let remixMode = getRemixMode(req.body.remixMode);
         let payload = {
             model: modelName,
@@ -1442,7 +1476,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
 
         let presetName = req.body.preset || process.env.OPENROUTER_PRESET || '@preset/noisecrafter';
 
-        let exampleTexts = getExampleProjectTexts(req.body);
+        let exampleTexts = await getExampleProjectTexts(req.body);
         let remixMode = getRemixMode(req.body.remixMode);
         let llmRes = await promptOpenRouter(getGenerationMessages(
             prompt,
@@ -1513,24 +1547,12 @@ app.post('/projects/import_remote', jsonParser, async function (req, res)
     try
     {
         let projectId = parseRemoteProjectRef(req.body?.ref);
-        let response = await fetch(`https://noisecraft.app/projects/${projectId}`);
-        if (!response.ok)
-            throw TypeError(`remote project fetch failed (${response.status})`);
-
-        let row = await response.json();
-        if (typeof row?.data != 'string')
-            throw TypeError('remote project data missing');
-
-        // Ensure the project can load before sending to client
-        let project = JSON.parse(row.data);
-        model.normalizeProject(project);
-        model.validateProject(project);
+        let serializedProject = await getRemoteProjectData(projectId);
 
         res.setHeader('Content-Type', 'application/json');
         return res.send(JSON.stringify({
             id: projectId,
-            title: row.title || '',
-            data: JSON.stringify(project),
+            data: serializedProject,
         }));
     }
     catch (e)

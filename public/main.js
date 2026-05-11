@@ -316,6 +316,7 @@ async function requestAIGeneration(prompt, options = {})
         body: JSON.stringify({
             prompt,
             examples: options.examples || [],
+            remoteExamples: options.remoteExamples || [],
             remixMode: options.remixMode || 'balanced',
             model: options.model || '',
         }),
@@ -351,6 +352,7 @@ async function requestAIGenerationStream(prompt, handlers = {}, options = {})
         body: JSON.stringify({
             prompt,
             examples: options.examples || [],
+            remoteExamples: options.remoteExamples || [],
             remixMode: options.remixMode || 'balanced',
             model: options.model || '',
         }),
@@ -475,6 +477,16 @@ function showGenerateDialog()
     exampleSelect.style.width = '95%';
     dialog.appendChild(exampleSelect);
 
+    let remoteExamplesLabel = document.createElement('p');
+    remoteExamplesLabel.textContent = 'Remote remix refs (optional, one URL/ID per line, max combined examples: 4):';
+    dialog.appendChild(remoteExamplesLabel);
+
+    let remoteExamplesArea = document.createElement('textarea');
+    remoteExamplesArea.rows = 3;
+    remoteExamplesArea.style.width = '95%';
+    remoteExamplesArea.placeholder = 'https://noisecraft.app/162\n275';
+    dialog.appendChild(remoteExamplesArea);
+
     let remixModeLabel = document.createElement('p');
     remixModeLabel.textContent = 'Remix mode:';
     dialog.appendChild(remixModeLabel);
@@ -594,6 +606,10 @@ function showGenerateDialog()
             reasoningPre.textContent = '';
             statusP.textContent = 'Status: generating...';
             let selectedExamples = [...exampleSelect.selectedOptions].map(opt => opt.value).slice(0, 4);
+            let remoteExamples = remoteExamplesArea.value
+                .split('\n')
+                .map(v => v.trim())
+                .filter(Boolean);
             let remixMode = remixModeSelect.value || 'balanced';
             let selectedModel = modelSelect.value || 'google/gemini-3.1-flash-lite';
 
@@ -627,6 +643,7 @@ function showGenerateDialog()
                 }
             }, {
                 examples: selectedExamples,
+                remoteExamples: remoteExamples,
                 remixMode: remixMode,
                 model: selectedModel,
             });
