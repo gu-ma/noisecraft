@@ -13,6 +13,7 @@ let inputProjectTitle = document.getElementById('project_title');
 
 // Menu buttons
 let btnOpen = document.getElementById('btn_open');
+let btnLoadURL = document.getElementById('btn_load_url');
 let btnSave = document.getElementById('btn_save');
 let btnShare = document.getElementById('btn_share');
 let btnGenerate = document.getElementById('btn_generate');
@@ -307,12 +308,18 @@ document.onpaste = function (evt)
 }
 
 
-async function requestAIGeneration(prompt)
+async function requestAIGeneration(prompt, options = {})
 {
     let response = await fetch('/llm/prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+            prompt,
+            examples: options.examples || [],
+            remoteExamples: options.remoteExamples || [],
+            remixMode: options.remixMode || 'balanced',
+            model: options.model || '',
+        }),
     });
 
     if (!response.ok)
@@ -337,12 +344,18 @@ async function requestAIGeneration(prompt)
 
 
 
-async function requestAIGenerationStream(prompt, handlers = {})
+async function requestAIGenerationStream(prompt, handlers = {}, options = {})
 {
     let response = await fetch('/llm/prompt/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+            prompt,
+            examples: options.examples || [],
+            remoteExamples: options.remoteExamples || [],
+            remixMode: options.remixMode || 'balanced',
+            model: options.model || '',
+        }),
     });
 
     if (!response.ok || !response.body)
@@ -400,7 +413,25 @@ async function requestAIGenerationStream(prompt, handlers = {})
 
 function showGenerateDialog()
 {
-    let dialog = new Dialog('Generate with AI');
+    let dialog = new Dialog('Generate');
+    let promptIdeas = [
+        'A bass that moves like a shadow under the floorboards.',
+        'A lead synth that cuts through the night like neon glass.',
+        'A soft pad drifting over a cold lake at dawn.',
+        'A tiny chiptune voice from a forgotten handheld console.',
+        'A deep sub tone felt more than heard.',
+        'A warm sequencer circling like a small constellation.',
+        'A wandering generative melody with no destination.',
+        'A sequencer that sounds like machinery learning to dance.',
+        'A minimal techno pulse, dry and focused.',
+        'A self-playing bassline with a hypnotic heartbeat.',
+        'A hi-hat made from silver static.',
+        'A snare like paper tearing in a tunnel.',
+        'A kick drum from a deep underground room.',
+        'A metallic percussion voice struck in the dark.',
+        'A spacious delay instrument that leaves trails behind itself.',
+        'A square wave lead with toy-like confidence.',
+    ];
 
     let promptLabel = document.createElement('p');
     promptLabel.textContent = 'Describe the instrument/patch you want to generate:';
@@ -411,6 +442,100 @@ function showGenerateDialog()
     textArea.style.width = '95%';
     textArea.placeholder = 'Example: warm analog bass with subtle filter movement';
     dialog.appendChild(textArea);
+
+    let ideasLabel = document.createElement('p');
+    ideasLabel.textContent = 'Prompt inspiration (optional):';
+    dialog.appendChild(ideasLabel);
+
+    let browseLink = document.createElement('a');
+    browseLink.href = 'https://noisecraft.app/browse';
+    browseLink.target = '_blank';
+    browseLink.rel = 'noopener noreferrer';
+    browseLink.textContent = 'Browse public projects for inspiration';
+    dialog.appendChild(browseLink);
+
+    let ideasSelect = document.createElement('select');
+    ideasSelect.style.width = '95%';
+    let ideasDefaultOpt = document.createElement('option');
+    ideasDefaultOpt.value = '';
+    ideasDefaultOpt.textContent = '-- Choose an inspiration prompt --';
+    ideasSelect.appendChild(ideasDefaultOpt);
+    for (let idea of promptIdeas)
+    {
+        let option = document.createElement('option');
+        option.value = idea;
+        option.textContent = idea;
+        ideasSelect.appendChild(option);
+    }
+    ideasSelect.onchange = () =>
+    {
+        if (ideasSelect.value)
+            textArea.value = ideasSelect.value;
+    };
+    dialog.appendChild(ideasSelect);
+
+    let exampleLabel = document.createElement('p');
+    exampleLabel.textContent = 'Reference examples (optional, max 4):';
+    dialog.appendChild(exampleLabel);
+
+    let exampleSelect = document.createElement('select');
+    exampleSelect.multiple = true;
+    exampleSelect.size = 8;
+    exampleSelect.style.width = '95%';
+    dialog.appendChild(exampleSelect);
+
+    let remoteExamplesLabel = document.createElement('p');
+    remoteExamplesLabel.textContent = 'Remote remix refs (optional, one URL/ID per line, max combined examples: 4):';
+    dialog.appendChild(remoteExamplesLabel);
+
+    let remoteExamplesArea = document.createElement('textarea');
+    remoteExamplesArea.rows = 3;
+    remoteExamplesArea.style.width = '95%';
+    remoteExamplesArea.placeholder = 'https://noisecraft.app/162\n275';
+    dialog.appendChild(remoteExamplesArea);
+
+    let remixModeLabel = document.createElement('p');
+    remixModeLabel.textContent = 'Remix mode:';
+    dialog.appendChild(remixModeLabel);
+
+    let remixModeSelect = document.createElement('select');
+    remixModeSelect.style.width = '95%';
+    for (let mode of ['balanced', 'strict', 'loose'])
+    {
+        let option = document.createElement('option');
+        option.value = mode;
+        option.textContent = mode;
+        if (mode == 'balanced')
+            option.selected = true;
+        remixModeSelect.appendChild(option);
+    }
+    dialog.appendChild(remixModeSelect);
+
+    let modelLabel = document.createElement('p');
+    modelLabel.textContent = 'Model:';
+    dialog.appendChild(modelLabel);
+
+    let modelSelect = document.createElement('select');
+    modelSelect.style.width = '95%';
+    for (let modelName of [
+        'google/gemini-3.1-flash-lite',
+        'moonshotai/kimi-k2.6',
+        'qwen/qwen3.6-35b-a3b',
+        'qwen/qwen3.6-27b',
+        'qwen/qwen3.6-flash',
+        'openai/gpt-5.3-codex',
+        'openai/gpt-5.4',
+        'openai/gpt-5.4-mini',
+    ])
+    {
+        let option = document.createElement('option');
+        option.value = modelName;
+        option.textContent = modelName;
+        if (modelName == 'google/gemini-3.1-flash-lite')
+            option.selected = true;
+        modelSelect.appendChild(option);
+    }
+    dialog.appendChild(modelSelect);
 
     let previewPre = document.createElement('pre');
     previewPre.style.whiteSpace = 'pre-wrap';
@@ -453,6 +578,22 @@ function showGenerateDialog()
     closeBtn.style.marginLeft = '8px';
 
     let generatedProject = null;
+    let exampleNames = [];
+
+    fetch('/llm/examples')
+        .then(response => response.json())
+        .then(data =>
+        {
+            exampleNames = data.examples || [];
+            for (let fileName of exampleNames)
+            {
+                let option = document.createElement('option');
+                option.value = fileName;
+                option.textContent = fileName;
+                exampleSelect.appendChild(option);
+            }
+        })
+        .catch((e) => console.log(e));
 
     async function runGeneration()
     {
@@ -471,6 +612,13 @@ function showGenerateDialog()
             previewPre.textContent = '';
             reasoningPre.textContent = '';
             statusP.textContent = 'Status: generating...';
+            let selectedExamples = [...exampleSelect.selectedOptions].map(opt => opt.value).slice(0, 4);
+            let remoteExamples = remoteExamplesArea.value
+                .split('\n')
+                .map(v => v.trim())
+                .filter(Boolean);
+            let remixMode = remixModeSelect.value || 'balanced';
+            let selectedModel = modelSelect.value || 'google/gemini-3.1-flash-lite';
 
             await requestAIGenerationStream(prompt, {
                 onToken: (msg) =>
@@ -500,6 +648,11 @@ function showGenerateDialog()
                     statusP.textContent = 'Status: error';
                     throw TypeError((msg.error || 'Generation failed') + (msg.requestId? ` (requestId=${msg.requestId})`:''));
                 }
+            }, {
+                examples: selectedExamples,
+                remoteExamples: remoteExamples,
+                remixMode: remixMode,
+                model: selectedModel,
             });
         }
         catch (e)
@@ -582,6 +735,78 @@ function openModelFile()
     };
 
     input.click();
+}
+
+async function loadRemoteProjectByRef(projectRef)
+{
+    let response = await fetch('/projects/import_remote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: projectRef }),
+    });
+
+    if (!response.ok)
+        throw TypeError('Remote project import failed');
+
+    let payload = await response.json();
+    if (typeof payload?.data != 'string')
+        throw TypeError('Invalid remote project data');
+
+    importModel(payload.data);
+}
+
+function showLoadURLDialog()
+{
+    let dialog = new Dialog('Load project from URL/ID');
+
+    let p = document.createElement('p');
+    p.textContent = 'Enter a NoiseCraft URL (e.g. https://noisecraft.app/162) or project ID:';
+    dialog.appendChild(p);
+
+    let input = document.createElement('input');
+    input.type = 'text';
+    input.style.width = '95%';
+    input.placeholder = 'https://noisecraft.app/162 or 162';
+    dialog.appendChild(input);
+
+    let browseLink = document.createElement('a');
+    browseLink.href = 'https://noisecraft.app/browse';
+    browseLink.target = '_blank';
+    browseLink.rel = 'noopener noreferrer';
+    browseLink.textContent = 'Find project IDs on the browse page';
+    dialog.appendChild(browseLink);
+
+    let loadBtn = document.createElement('button');
+    loadBtn.className = 'form_btn';
+    loadBtn.textContent = 'Load';
+
+    let closeBtn = document.createElement('button');
+    closeBtn.className = 'form_btn';
+    closeBtn.textContent = 'Close';
+    closeBtn.style.marginLeft = '8px';
+
+    loadBtn.onclick = async () =>
+    {
+        try
+        {
+            dialog.hideError();
+            let value = input.value.trim();
+            if (!value)
+                throw TypeError('Please enter a URL or project ID.');
+            await loadRemoteProjectByRef(value);
+            dialog.close();
+        }
+        catch (e)
+        {
+            console.log(e);
+            dialog.showError(e.message || 'Failed to load remote project.');
+        }
+    };
+
+    closeBtn.onclick = () => dialog.close();
+
+    dialog.appendChild(loadBtn);
+    dialog.appendChild(closeBtn);
 }
 
 function saveModelFile()
@@ -718,6 +943,7 @@ function browserWarning()
 }
 
 btnOpen.onclick = openModelFile;
+btnLoadURL.onclick = showLoadURLDialog;
 btnSave.onclick = saveModelFile;
 btnGenerate.onclick = showGenerateDialog;
 btnShare.onclick = shareProject;

@@ -159,6 +159,53 @@ curl -i -X POST http://localhost:7773/llm/prompt \
   -d '{"prompt":"test"}'
 ```
 
+### AI generation options (examples, remix, model)
+
+`POST /llm/prompt` and `POST /llm/prompt/stream` accept the following JSON fields:
+
+- `prompt` (required): natural-language patch request
+- `model` (optional): OpenRouter model ID
+- `examples` (optional): local `.ncft` filenames from the `examples/` folder
+- `remoteExamples` (optional): list of NoiseCraft project refs (`https://noisecraft.app/<id>` or `<id>`)
+- `remixMode` (optional): one of `strict`, `balanced`, `loose` (default `balanced`)
+- `temperature` (optional)
+- `maxTokens` (optional)
+- `preset` (optional)
+
+Example request:
+
+```bash
+curl -sS -X POST http://localhost:7773/llm/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "Self-playing dark bass sequence with delay",
+    "model": "google/gemini-3.1-flash-lite",
+    "examples": ["acid_test.ncft"],
+    "remoteExamples": ["https://noisecraft.app/162"],
+    "remixMode": "balanced"
+  }' | jq
+```
+
+Related helper endpoints:
+
+- `GET /llm/examples` lists local `.ncft` example filenames for the Generate dialog.
+- `POST /projects/import_remote` with `{ "ref": "https://noisecraft.app/162" }` (or `{ "ref": "162" }`) fetches and validates a remote project before returning serialized JSON data.
+
+### Reasoning token controls
+
+Reasoning can be disabled/enabled globally for OpenRouter calls:
+
+```bash
+# Default is disabled
+export OPENROUTER_ENABLE_REASONING=0
+
+# Enable reasoning explicitly
+export OPENROUTER_ENABLE_REASONING=1
+export OPENROUTER_REASONING_EFFORT=low
+```
+
+When reasoning is disabled, requests are faster and use fewer tokens.
+
 
 ## Running using Docker
 

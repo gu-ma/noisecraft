@@ -24,6 +24,9 @@ var app = express();
 const clockSessions = new Map();
 
 let llmReqCounter = 0;
+const exampleDirPath = path.join(process.cwd(), 'examples');
+const reasoningEnabled = process.env.OPENROUTER_ENABLE_REASONING == '1';
+const reasoningEffort = process.env.OPENROUTER_REASONING_EFFORT || 'low';
 
 function nextLLMReqId()
 {
@@ -95,13 +98,17 @@ async function promptOpenRouter(messages, options = {})
             messages: messages,
             temperature: temperature,
             max_tokens: maxTokens,
-            reasoning: {
-                effort: 'medium',
+            include_reasoning: reasoningEnabled,
+        };
+
+        if (reasoningEnabled)
+        {
+            payload.reasoning = {
+                effort: reasoningEffort,
                 exclude: false,
                 enabled: true,
-            },
-            include_reasoning: true,
-        };
+            };
+        }
 
         if (options.preset)
             payload.preset = options.preset;
@@ -241,6 +248,149 @@ ${text}`;
 
         return parseGeneratedProjectText(repaired.content);
     }
+}
+
+function getGenerationMessages(prompt, options = {})
+{
+    let userPrompt = `Generate one complete NoiseCraft project JSON from this request: ${prompt}`;
+
+    let remixMode = options.remixMode || 'balanced';
+    if (options.exampleTexts?.length)
+    {
+        userPrompt += `\n\nUse remix mode: ${remixMode}. Remix the following example project JSON while adapting to the request. Keep output as a full standalone NoiseCraft project JSON:\n`;
+
+        for (let [idx, exampleText] of options.exampleTexts.entries())
+        {
+            userPrompt += `\n\n--- Example ${idx + 1} ---\n`;
+            userPrompt += exampleText;
+        }
+    }
+
+    return [{ role: 'user', content: userPrompt }];
+}
+
+function getExampleProjectText(exampleName)
+{
+    if (typeof exampleName != 'string' || exampleName.length == 0)
+        return null;
+
+    let safeName = path.basename(exampleName);
+    if (!safeName.endsWith('.ncft'))
+        throw TypeError('example must be a .ncft file');
+
+    let filePath = path.join(exampleDirPath, safeName);
+    if (!fs.existsSync(filePath))
+        throw TypeError(`example not found: ${safeName}`);
+
+    return fs.readFileSync(filePath, 'utf8').trim();
+}
+
+async function getRemoteProjectData(projectId)
+{
+    let response = await fetch(`https://noisecraft.app/projects/${projectId}`);
+    if (!response.ok)
+        throw TypeError(`remote project fetch failed (${response.status})`);
+
+    let row = await response.json();
+    if (typeof row?.data != 'string')
+        throw TypeError('remote project data missing');
+
+    let project = JSON.parse(row.data);
+    model.normalizeProject(project);
+    model.validateProject(project);
+    return JSON.stringify(project);
+}
+
+async function getExampleProjectTexts(body)
+{
+    let names = [];
+
+    if (typeof body.example == 'string' && body.example.length)
+        names.push(body.example);
+
+    if (body.examples instanceof Array)
+    {
+        for (let name of body.examples)
+        {
+            if (typeof name == 'string' && name.length)
+                names.push(name);
+        }
+    }
+
+    if (body.remoteExamples instanceof Array)
+    {
+        for (let ref of body.remoteExamples)
+        {
+            if (typeof ref == 'string' && ref.length)
+                names.push(ref);
+        }
+    }
+
+    if (!names.length)
+        return [];
+
+    if (names.length > 4)
+        throw TypeError('at most 4 examples are allowed');
+
+    names = [...new Set(names)];
+    let out = [];
+    for (let name of names)
+    {
+        if (name.endsWith('.ncft'))
+            out.push(getExampleProjectText(name));
+        else
+            out.push(await getRemoteProjectData(parseRemoteProjectRef(name)));
+    }
+
+    return out;
+}
+
+function listExampleProjects()
+{
+    if (!fs.existsSync(exampleDirPath))
+        return [];
+
+    return fs.readdirSync(exampleDirPath)
+        .filter(name => name.endsWith('.ncft'))
+        .sort();
+}
+
+function parseRemoteProjectRef(projectRef)
+{
+    if (typeof projectRef != 'string')
+        throw TypeError('ref must be a string');
+
+    let trimmed = projectRef.trim();
+    if (!trimmed)
+        throw TypeError('missing project ref');
+
+    if (/^\d+$/.test(trimmed))
+        return Number(trimmed);
+
+    let url = new URL(trimmed);
+    if (url.hostname != 'noisecraft.app')
+        throw TypeError('only noisecraft.app URLs are supported');
+
+    let match = url.pathname.match(/^\/(\d+)$/);
+    if (!match)
+        throw TypeError('invalid remote project URL');
+
+    return Number(match[1]);
+}
+
+function getRemixMode(remixMode)
+{
+    if (remixMode === undefined || remixMode === null || remixMode === '')
+        return 'balanced';
+
+    if (typeof remixMode != 'string')
+        throw TypeError('remixMode must be a string');
+
+    let out = remixMode.toLowerCase();
+    if (!['strict', 'balanced', 'loose'].includes(out))
+        throw TypeError('remixMode must be one of: strict, balanced, loose');
+
+    return out;
 }
 
 function coerceParamValue(value, defaultValue)
@@ -1218,18 +1368,26 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
         let maxTokens = req.body.maxTokens || 20000;
         let temperature = req.body.temperature ?? 0.4;
 
+        let exampleTexts = await getExampleProjectTexts(req.body);
+        let remixMode = getRemixMode(req.body.remixMode);
         let payload = {
             model: modelName,
             preset: presetName,
-            messages: [
-                { role: 'user', content: 'Generate one complete NoiseCraft project JSON from this request: ' + prompt }
-            ],
+            messages: getGenerationMessages(prompt, { exampleTexts, remixMode }),
             temperature: temperature,
             max_tokens: maxTokens,
             stream: true,
-            reasoning: { effort: 'medium', exclude: false, enabled: true },
-            include_reasoning: true,
+            include_reasoning: reasoningEnabled,
         };
+
+        if (reasoningEnabled)
+        {
+            payload.reasoning = {
+                effort: reasoningEffort,
+                exclude: false,
+                enabled: true,
+            };
+        }
 
         let response = await fetch(openRouterAPIURL, {
             method: 'POST',
@@ -1332,12 +1490,12 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
 
         let presetName = req.body.preset || process.env.OPENROUTER_PRESET || '@preset/noisecrafter';
 
-        let llmRes = await promptOpenRouter([
-            {
-                role: 'user',
-                content: 'Generate one complete NoiseCraft project JSON from this request: ' + prompt
-            },
-        ], {
+        let exampleTexts = await getExampleProjectTexts(req.body);
+        let remixMode = getRemixMode(req.body.remixMode);
+        let llmRes = await promptOpenRouter(getGenerationMessages(
+            prompt,
+            { exampleTexts, remixMode }
+        ), {
             reqId: reqId,
             model: req.body.model,
             preset: presetName,
@@ -1380,6 +1538,41 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
             error: (e && e.message)? e.message:'llm prompt request failed',
             requestId: reqId,
         }));
+    }
+});
+
+app.get('/llm/examples', function (req, res)
+{
+    try
+    {
+        let examples = listExampleProjects();
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify({ examples }));
+    }
+    catch (e)
+    {
+        console.log(e);
+        return res.sendStatus(500);
+    }
+});
+
+app.post('/projects/import_remote', jsonParser, async function (req, res)
+{
+    try
+    {
+        let projectId = parseRemoteProjectRef(req.body?.ref);
+        let serializedProject = await getRemoteProjectData(projectId);
+
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify({
+            id: projectId,
+            data: serializedProject,
+        }));
+    }
+    catch (e)
+    {
+        console.log(e);
+        return res.sendStatus(400);
     }
 });
 
