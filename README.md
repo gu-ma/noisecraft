@@ -110,6 +110,21 @@ To run tests locally:
 node tests.js
 ```
 
+
+## Deploying to GitHub Pages
+
+This repository includes a GitHub Actions workflow at `.github/workflows/deploy-github-pages.yml` that publishes the static client to GitHub Pages.
+
+1. In your GitHub repository settings, enable **Pages** and set **Build and deployment** to **GitHub Actions**.
+2. Push to the `master` branch (or run the workflow manually from the Actions tab).
+3. The workflow installs dependencies, builds the client bundle, and deploys `deploy/public` as the Pages artifact.
+
+You can also validate the Pages build locally with:
+
+```
+npm run build:pages
+```
+
 ## Running using Docker
 
 To run the NoiseCraft server using Docker please follow these steps:
