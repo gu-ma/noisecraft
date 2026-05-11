@@ -111,6 +111,108 @@ function getLLMNodeCatalog()
     return catalog;
 }
 
+
+function coerceGeneratedProject(project)
+{
+    if (!(project instanceof Object))
+        throw TypeError('generated project must be an object');
+
+    if (typeof project.title != 'string')
+        project.title = 'Generated Patch';
+
+    if (!(project.nodes instanceof Object))
+        throw TypeError('generated project missing nodes');
+
+    let outNodes = {};
+    let outId = 0;
+
+    for (let nodeId in project.nodes)
+    {
+        let node = project.nodes[nodeId];
+        if (!(node instanceof Object))
+            continue;
+
+        if (typeof node.type != 'string' || !(node.type in model.NODE_SCHEMA))
+            continue;
+
+        let schema = model.NODE_SCHEMA[node.type];
+        if (schema.internal)
+            continue;
+
+        let outNode = {
+            type: node.type,
+            name: (typeof node.name == 'string' && node.name.length)? node.name.slice(0, 12):node.type,
+            x: Number.isFinite(node.x)? Math.round(node.x):0,
+            y: Number.isFinite(node.y)? Math.round(node.y):0,
+            ins: Array(schema.ins.length).fill(null),
+            inNames: schema.ins.map(input => input.name),
+            outNames: schema.outs.map(name => name),
+            params: {},
+        };
+
+        for (let param of schema.params)
+        {
+            let val = node.params?.[param.name];
+            outNode.params[param.name] = (val === undefined)? param.default:val;
+        }
+
+        // preserve valid schema state fields when present
+        for (let key of schema.state)
+        {
+            if (key in node)
+                outNode[key] = node[key];
+        }
+
+        outNodes[String(outId)] = outNode;
+        outId += 1;
+    }
+
+    // map old IDs to new IDs in insertion order
+    let oldIds = Object.keys(project.nodes);
+    let idMap = {};
+    let keptOldIds = [];
+    for (let oldId of oldIds)
+    {
+        let oldNode = project.nodes[oldId];
+        if (!(oldNode instanceof Object) || typeof oldNode.type != 'string')
+            continue;
+        if (!(oldNode.type in model.NODE_SCHEMA) || model.NODE_SCHEMA[oldNode.type].internal)
+            continue;
+        idMap[oldId] = String(keptOldIds.length);
+        keptOldIds.push(oldId);
+    }
+
+    // reconnect inputs
+    for (let newId in outNodes)
+    {
+        let oldId = keptOldIds[Number(newId)];
+        let oldNode = project.nodes[oldId];
+        let newNode = outNodes[newId];
+
+        for (let i = 0; i < newNode.ins.length; ++i)
+        {
+            let inRef = oldNode.ins?.[i];
+            if (!(inRef instanceof Array) || inRef.length != 2)
+                continue;
+
+            let srcOldId = String(inRef[0]);
+            let outIdx = Number(inRef[1]);
+            let srcNewId = idMap[srcOldId];
+            if (srcNewId === undefined)
+                continue;
+
+            let srcNode = outNodes[srcNewId];
+            if (!Number.isInteger(outIdx) || outIdx < 0 || outIdx >= srcNode.outNames.length)
+                continue;
+
+            newNode.ins[i] = [srcNewId, outIdx];
+        }
+    }
+
+    project.nodes = outNodes;
+    return project;
+}
+
 function buildNoiseCraftSystemPrompt()
 {
     let nodeCatalog = JSON.stringify(getLLMNodeCatalog());
@@ -938,6 +1040,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
         });
 
         let project = JSON.parse(llmRes.content);
+        project = coerceGeneratedProject(project);
         model.normalizeProject(project);
         model.validateProject(project);
 
