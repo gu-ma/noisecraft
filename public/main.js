@@ -15,6 +15,7 @@ let inputProjectTitle = document.getElementById('project_title');
 let btnOpen = document.getElementById('btn_open');
 let btnSave = document.getElementById('btn_save');
 let btnShare = document.getElementById('btn_share');
+let btnGenerate = document.getElementById('btn_generate');
 let btnPlay = document.getElementById('btn_play');
 let btnStop = document.getElementById('btn_stop');
 let netSyncBadge = document.getElementById('net_sync_badge');
@@ -306,6 +307,112 @@ document.onpaste = function (evt)
     }
 }
 
+
+async function requestAIGeneration(prompt)
+{
+    let response = await fetch('/llm/prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+    });
+
+    if (!response.ok)
+        throw TypeError('AI generation failed');
+
+    return response.json();
+}
+
+function showGenerateDialog()
+{
+    let dialog = new Dialog('Generate with AI');
+
+    let promptLabel = document.createElement('p');
+    promptLabel.textContent = 'Describe the instrument/patch you want to generate:';
+    dialog.appendChild(promptLabel);
+
+    let textArea = document.createElement('textarea');
+    textArea.rows = 5;
+    textArea.style.width = '95%';
+    textArea.placeholder = 'Example: warm analog bass with subtle filter movement';
+    dialog.appendChild(textArea);
+
+    let previewPre = document.createElement('pre');
+    previewPre.style.whiteSpace = 'pre-wrap';
+    previewPre.style.maxHeight = '180px';
+    previewPre.style.overflowY = 'auto';
+    previewPre.style.fontSize = '12px';
+    previewPre.textContent = 'Click Generate to preview a project.';
+    dialog.appendChild(previewPre);
+
+    let generateBtn = document.createElement('button');
+    generateBtn.className = 'form_btn';
+    generateBtn.textContent = 'Generate';
+
+    let regenBtn = document.createElement('button');
+    regenBtn.className = 'form_btn';
+    regenBtn.textContent = 'Regenerate';
+    regenBtn.style.marginLeft = '8px';
+
+    let useBtn = document.createElement('button');
+    useBtn.className = 'form_btn';
+    useBtn.textContent = 'Use';
+    useBtn.style.marginLeft = '8px';
+    useBtn.disabled = true;
+
+    let closeBtn = document.createElement('button');
+    closeBtn.className = 'form_btn';
+    closeBtn.textContent = 'Close';
+    closeBtn.style.marginLeft = '8px';
+
+    let generatedProject = null;
+
+    async function runGeneration()
+    {
+        try
+        {
+            dialog.hideError();
+            let prompt = textArea.value.trim();
+            if (!prompt)
+            {
+                dialog.showError('Please enter a prompt.');
+                return;
+            }
+
+            previewPre.textContent = 'Generating...';
+            let result = await requestAIGeneration(prompt);
+            generatedProject = result.project;
+            previewPre.textContent = JSON.stringify(generatedProject, null, 2);
+            useBtn.disabled = false;
+        }
+        catch (e)
+        {
+            console.log(e);
+            previewPre.textContent = 'No preview available.';
+            useBtn.disabled = true;
+            dialog.showError('Generation failed. Check server logs/API key.');
+        }
+    }
+
+    generateBtn.onclick = runGeneration;
+    regenBtn.onclick = runGeneration;
+
+    useBtn.onclick = () =>
+    {
+        if (!generatedProject)
+            return;
+
+        importModel(JSON.stringify(generatedProject));
+        dialog.close();
+    };
+
+    closeBtn.onclick = () => dialog.close();
+
+    dialog.appendChild(generateBtn);
+    dialog.appendChild(regenBtn);
+    dialog.appendChild(useBtn);
+    dialog.appendChild(closeBtn);
+}
+
 function handleMouseEvent(evt)
 {
     cursor = editor.getMousePos(evt);
@@ -494,6 +601,7 @@ function browserWarning()
 
 btnOpen.onclick = openModelFile;
 btnSave.onclick = saveModelFile;
+btnGenerate.onclick = showGenerateDialog;
 btnShare.onclick = shareProject;
 btnPlay.onclick = startPlayback;
 btnStop.onclick = stopPlayback;
