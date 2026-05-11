@@ -189,6 +189,31 @@ function parseGeneratedProjectText(text)
     throw SyntaxError('failed to parse generated JSON');
 }
 
+
+async function parseOrRepairGeneratedProject(text, modelName)
+{
+    try
+    {
+        return parseGeneratedProjectText(text);
+    }
+    catch (e)
+    {
+        let repairPrompt = `Fix this malformed JSON and return ONLY valid JSON. Keep the same semantic content and do not add markdown:
+${text}`;
+
+        let repaired = await promptOpenRouter([
+            { role: 'system', content: 'You are a JSON repair assistant. Return JSON only.' },
+            { role: 'user', content: repairPrompt },
+        ], {
+            model: modelName,
+            temperature: 0,
+            maxTokens: 2000,
+        });
+
+        return parseGeneratedProjectText(repaired.content);
+    }
+}
+
 function coerceGeneratedProject(project)
 {
     if (!(project instanceof Object))
@@ -1175,7 +1200,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
             temperature: req.body.temperature,
         });
 
-        let project = parseGeneratedProjectText(llmRes.content);
+        let project = await parseOrRepairGeneratedProject(llmRes.content, req.body.model);
         project = coerceGeneratedProject(project);
         autoConnectGeneratedProject(project);
         model.normalizeProject(project);
