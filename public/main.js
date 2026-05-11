@@ -307,12 +307,16 @@ document.onpaste = function (evt)
 }
 
 
-async function requestAIGeneration(prompt)
+async function requestAIGeneration(prompt, options = {})
 {
     let response = await fetch('/llm/prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+            prompt,
+            examples: options.examples || [],
+            remixMode: options.remixMode || 'balanced',
+        }),
     });
 
     if (!response.ok)
@@ -337,12 +341,16 @@ async function requestAIGeneration(prompt)
 
 
 
-async function requestAIGenerationStream(prompt, handlers = {})
+async function requestAIGenerationStream(prompt, handlers = {}, options = {})
 {
     let response = await fetch('/llm/prompt/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({
+            prompt,
+            examples: options.examples || [],
+            remixMode: options.remixMode || 'balanced',
+        }),
     });
 
     if (!response.ok || !response.body)
@@ -412,6 +420,33 @@ function showGenerateDialog()
     textArea.placeholder = 'Example: warm analog bass with subtle filter movement';
     dialog.appendChild(textArea);
 
+    let exampleLabel = document.createElement('p');
+    exampleLabel.textContent = 'Reference examples (optional, max 4):';
+    dialog.appendChild(exampleLabel);
+
+    let exampleSelect = document.createElement('select');
+    exampleSelect.multiple = true;
+    exampleSelect.size = 8;
+    exampleSelect.style.width = '95%';
+    dialog.appendChild(exampleSelect);
+
+    let remixModeLabel = document.createElement('p');
+    remixModeLabel.textContent = 'Remix mode:';
+    dialog.appendChild(remixModeLabel);
+
+    let remixModeSelect = document.createElement('select');
+    remixModeSelect.style.width = '95%';
+    for (let mode of ['balanced', 'strict', 'loose'])
+    {
+        let option = document.createElement('option');
+        option.value = mode;
+        option.textContent = mode;
+        if (mode == 'balanced')
+            option.selected = true;
+        remixModeSelect.appendChild(option);
+    }
+    dialog.appendChild(remixModeSelect);
+
     let previewPre = document.createElement('pre');
     previewPre.style.whiteSpace = 'pre-wrap';
     previewPre.style.maxHeight = '180px';
@@ -453,6 +488,22 @@ function showGenerateDialog()
     closeBtn.style.marginLeft = '8px';
 
     let generatedProject = null;
+    let exampleNames = [];
+
+    fetch('/llm/examples')
+        .then(response => response.json())
+        .then(data =>
+        {
+            exampleNames = data.examples || [];
+            for (let fileName of exampleNames)
+            {
+                let option = document.createElement('option');
+                option.value = fileName;
+                option.textContent = fileName;
+                exampleSelect.appendChild(option);
+            }
+        })
+        .catch((e) => console.log(e));
 
     async function runGeneration()
     {
@@ -471,6 +522,8 @@ function showGenerateDialog()
             previewPre.textContent = '';
             reasoningPre.textContent = '';
             statusP.textContent = 'Status: generating...';
+            let selectedExamples = [...exampleSelect.selectedOptions].map(opt => opt.value).slice(0, 4);
+            let remixMode = remixModeSelect.value || 'balanced';
 
             await requestAIGenerationStream(prompt, {
                 onToken: (msg) =>
@@ -500,6 +553,9 @@ function showGenerateDialog()
                     statusP.textContent = 'Status: error';
                     throw TypeError((msg.error || 'Generation failed') + (msg.requestId? ` (requestId=${msg.requestId})`:''));
                 }
+            }, {
+                examples: selectedExamples,
+                remixMode: remixMode,
             });
         }
         catch (e)

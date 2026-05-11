@@ -24,6 +24,7 @@ var app = express();
 const clockSessions = new Map();
 
 let llmReqCounter = 0;
+const exampleDirPath = path.join(process.cwd(), 'examples');
 
 function nextLLMReqId()
 {
@@ -241,6 +242,92 @@ ${text}`;
 
         return parseGeneratedProjectText(repaired.content);
     }
+}
+
+function getGenerationMessages(prompt, options = {})
+{
+    let userPrompt = `Generate one complete NoiseCraft project JSON from this request: ${prompt}`;
+
+    let remixMode = options.remixMode || 'balanced';
+    if (options.exampleTexts?.length)
+    {
+        userPrompt += `\n\nUse remix mode: ${remixMode}. Remix the following example project JSON while adapting to the request. Keep output as a full standalone NoiseCraft project JSON:\n`;
+
+        for (let [idx, exampleText] of options.exampleTexts.entries())
+        {
+            userPrompt += `\n\n--- Example ${idx + 1} ---\n`;
+            userPrompt += exampleText;
+        }
+    }
+
+    return [{ role: 'user', content: userPrompt }];
+}
+
+function getExampleProjectText(exampleName)
+{
+    if (typeof exampleName != 'string' || exampleName.length == 0)
+        return null;
+
+    let safeName = path.basename(exampleName);
+    if (!safeName.endsWith('.ncft'))
+        throw TypeError('example must be a .ncft file');
+
+    let filePath = path.join(exampleDirPath, safeName);
+    if (!fs.existsSync(filePath))
+        throw TypeError(`example not found: ${safeName}`);
+
+    return fs.readFileSync(filePath, 'utf8').trim();
+}
+
+function getExampleProjectTexts(body)
+{
+    let names = [];
+
+    if (typeof body.example == 'string' && body.example.length)
+        names.push(body.example);
+
+    if (body.examples instanceof Array)
+    {
+        for (let name of body.examples)
+        {
+            if (typeof name == 'string' && name.length)
+                names.push(name);
+        }
+    }
+
+    if (!names.length)
+        return [];
+
+    if (names.length > 4)
+        throw TypeError('at most 4 examples are allowed');
+
+    names = [...new Set(names)];
+    return names.map(name => getExampleProjectText(name));
+}
+
+function listExampleProjects()
+{
+    if (!fs.existsSync(exampleDirPath))
+        return [];
+
+    return fs.readdirSync(exampleDirPath)
+        .filter(name => name.endsWith('.ncft'))
+        .sort();
+}
+
+function getRemixMode(remixMode)
+{
+    if (remixMode === undefined || remixMode === null || remixMode === '')
+        return 'balanced';
+
+    if (typeof remixMode != 'string')
+        throw TypeError('remixMode must be a string');
+
+    let out = remixMode.toLowerCase();
+    if (!['strict', 'balanced', 'loose'].includes(out))
+        throw TypeError('remixMode must be one of: strict, balanced, loose');
+
+    return out;
 }
 
 function coerceParamValue(value, defaultValue)
@@ -1218,12 +1305,12 @@ app.post('/llm/prompt/stream', jsonParser, async function (req, res)
         let maxTokens = req.body.maxTokens || 20000;
         let temperature = req.body.temperature ?? 0.4;
 
+        let exampleTexts = getExampleProjectTexts(req.body);
+        let remixMode = getRemixMode(req.body.remixMode);
         let payload = {
             model: modelName,
             preset: presetName,
-            messages: [
-                { role: 'user', content: 'Generate one complete NoiseCraft project JSON from this request: ' + prompt }
-            ],
+            messages: getGenerationMessages(prompt, { exampleTexts, remixMode }),
             temperature: temperature,
             max_tokens: maxTokens,
             stream: true,
@@ -1332,12 +1419,12 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
 
         let presetName = req.body.preset || process.env.OPENROUTER_PRESET || '@preset/noisecrafter';
 
-        let llmRes = await promptOpenRouter([
-            {
-                role: 'user',
-                content: 'Generate one complete NoiseCraft project JSON from this request: ' + prompt
-            },
-        ], {
+        let exampleTexts = getExampleProjectTexts(req.body);
+        let remixMode = getRemixMode(req.body.remixMode);
+        let llmRes = await promptOpenRouter(getGenerationMessages(
+            prompt,
+            { exampleTexts, remixMode }
+        ), {
             reqId: reqId,
             model: req.body.model,
             preset: presetName,
@@ -1380,6 +1467,21 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
             error: (e && e.message)? e.message:'llm prompt request failed',
             requestId: reqId,
         }));
+    }
+});
+
+app.get('/llm/examples', function (req, res)
+{
+    try
+    {
+        let examples = listExampleProjects();
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify({ examples }));
+    }
+    catch (e)
+    {
+        console.log(e);
+        return res.sendStatus(500);
     }
 });
 
