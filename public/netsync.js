@@ -29,12 +29,9 @@ export class NetSync
         }
 
         let proto = (location.protocol === 'https:')? 'wss':'ws';
-        const pathParts = location.pathname.split('/').filter(Boolean);
-        const firstPart = pathParts[0] || '';
-        const appRoutes = new Set(['browse', 'help', 'stats']);
-        const hasBasePath = firstPart && !appRoutes.has(firstPart) && !/^\d+$/.test(firstPart);
-        const basePath = hasBasePath ? `/${firstPart}` : '';
-        this.ws = new WebSocket(`${proto}://${location.host}${basePath}/ws-clock`);
+        const params = new URLSearchParams(location.search);
+        const wsPath = params.get('net_ws_path') || '/ws-clock';
+        this.ws = new WebSocket(`${proto}://${location.host}${wsPath}`);
 
         this.ws.onopen = () => {
             this.send({ type: 'JOIN_CLOCK_SESSION', sessionId: this.sessionId, role: this.mode });
