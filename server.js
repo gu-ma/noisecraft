@@ -33,6 +33,143 @@ function getClockSession(sessionId)
 // Create application/json parser
 var jsonParser = bodyParser.json({limit: '1mb'});
 
+
+const openRouterAPIURL = 'https://openrouter.ai/api/v1/chat/completions';
+
+async function promptOpenRouter(messages, options = {})
+{
+    let apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey)
+        throw TypeError('missing OPENROUTER_API_KEY');
+
+    if (!(messages instanceof Array) || messages.length == 0)
+        throw TypeError('messages must be a non-empty array');
+
+    let modelName = options.model || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    let maxTokens = options.maxTokens || 1400;
+    let temperature = options.temperature ?? 0.4;
+
+    let response = await fetch(openRouterAPIURL, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            ...(process.env.OPENROUTER_SITE_URL? { 'HTTP-Referer': process.env.OPENROUTER_SITE_URL }: {}),
+            ...(process.env.OPENROUTER_SITE_NAME? { 'X-Title': process.env.OPENROUTER_SITE_NAME }: {}),
+        },
+        body: JSON.stringify({
+            model: modelName,
+            messages: messages,
+            temperature: temperature,
+            max_tokens: maxTokens,
+            response_format: { type: 'json_object' },
+        })
+    });
+
+    if (!response.ok)
+    {
+        let errText = await response.text();
+        throw TypeError(`openrouter error (${response.status}): ${errText.slice(0, 300)}`);
+    }
+
+    let data = await response.json();
+    let msg = data?.choices?.[0]?.message?.content;
+    if (typeof msg !== 'string' || msg.length == 0)
+        throw TypeError('openrouter returned empty message');
+
+    return {
+        model: data.model || modelName,
+        content: msg,
+        usage: data.usage || null,
+    };
+}
+
+
+function getLLMNodeCatalog()
+{
+    let catalog = {};
+
+    for (let nodeType in model.NODE_SCHEMA)
+    {
+        let schema = model.NODE_SCHEMA[nodeType];
+
+        if (schema.internal)
+            continue;
+
+        catalog[nodeType] = {
+            ins: schema.ins.map(input => input.name),
+            outs: schema.outs,
+            params: schema.params.map(param => ({
+                name: param.name,
+                default: param.default,
+            })),
+            description: schema.description || '',
+            unique: Boolean(schema.unique),
+        };
+    }
+
+    return catalog;
+}
+
+
+function cleanupGeneratedProject(project)
+{
+    let removedNodeIds = [];
+    let removedConnections = 0;
+
+    for (let nodeId in project.nodes)
+    {
+        let node = project.nodes[nodeId];
+        if (!(node?.type in model.NODE_SCHEMA) || model.NODE_SCHEMA[node.type].internal)
+        {
+            delete project.nodes[nodeId];
+            removedNodeIds.push(nodeId);
+        }
+    }
+
+    for (let nodeId in project.nodes)
+    {
+        let node = project.nodes[nodeId];
+        if (!(node.ins instanceof Array))
+            continue;
+
+        for (let i = 0; i < node.ins.length; ++i)
+        {
+            let input = node.ins[i];
+            if (!input)
+                continue;
+
+            if (!(input instanceof Array) || input.length != 2)
+            {
+                node.ins[i] = null;
+                removedConnections += 1;
+                continue;
+            }
+
+            let srcId = input[0];
+            let outIdx = input[1];
+            let srcNode = project.nodes[srcId];
+
+            if (!srcNode || !isFinite(outIdx) || outIdx < 0 || outIdx >= srcNode.outNames.length)
+            {
+                node.ins[i] = null;
+                removedConnections += 1;
+            }
+        }
+    }
+
+    return { removedNodeIds, removedConnections };
+}
+
+function buildNoiseCraftSystemPrompt()
+{
+    let nodeCatalog = JSON.stringify(getLLMNodeCatalog());
+
+    return (
+        'You are a NoiseCraft patch generator. Return JSON only, no markdown. '        + 'The response must be a valid project object with exactly keys "title" and "nodes". '        + 'Use only node types present in this catalog: ' + nodeCatalog + '. '        + 'Each node must include: type, name, x, y, ins, inNames, outNames, params. '        + 'Node IDs must be numeric strings like "0", "1". '        + 'Connections in ins must be null or ["sourceNodeId", outputPortIndex]. '        + 'Do not include internal nodes or extra properties. '        + 'Always include one AudioOut node and connect audible signal to both left and right inputs.'
+    );
+}
+
 // Connect to the database
 async function connectDb(dbFilePath)
 {
@@ -823,6 +960,53 @@ app.delete('/projects', async function (req, res)
         return res.sendStatus(400);
     }
 })
+
+
+
+app.post('/llm/prompt', jsonParser, async function (req, res)
+{
+    try
+    {
+        let prompt = req.body.prompt;
+        if (typeof prompt != 'string' || prompt.length == 0 || prompt.length > 4000)
+            return res.sendStatus(400);
+
+        let llmRes = await promptOpenRouter([
+            { role: 'system', content: buildNoiseCraftSystemPrompt() },
+            {
+                role: 'user',
+                content: `Generate one complete NoiseCraft project from this request: ${prompt}
+
+`
+                    + 'Example output shape (fill with your own content): '
+                    + '{"title":"Patch Name","nodes":{"0":{"type":"Sine","name":"Sine","x":0,"y":0,"ins":[null,null],"inNames":["freq","sync"],"outNames":["out"],"params":{"minVal":-1,"maxVal":1}}}}'
+            },
+        ], {
+            model: req.body.model,
+            maxTokens: req.body.maxTokens,
+            temperature: req.body.temperature,
+        });
+
+        let project = JSON.parse(llmRes.content);
+        let cleanup = cleanupGeneratedProject(project);
+        model.normalizeProject(project);
+        model.validateProject(project);
+
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify({
+            project: project,
+            model: llmRes.model,
+            usage: llmRes.usage,
+            cleanup: cleanup,
+        }));
+    }
+    catch (e)
+    {
+        console.log('llm prompt request failed');
+        console.log(e);
+        return res.sendStatus(400);
+    }
+});
 
 //============================================================================
 

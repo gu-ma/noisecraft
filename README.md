@@ -110,6 +110,53 @@ To run tests locally:
 node tests.js
 ```
 
+
+### Testing the LLM generation endpoint
+
+Set your OpenRouter key and run the server:
+
+```bash
+export OPENROUTER_API_KEY="<your_key>"
+# Optional:
+# export OPENROUTER_MODEL="openai/gpt-4o-mini"
+node server.js
+```
+
+In another terminal, call the endpoint:
+
+```bash
+curl -sS -X POST http://localhost:7773/llm/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "Make a mellow ambient pad with slow movement",
+    "temperature": 0.3,
+    "maxTokens": 1200
+  }' | jq
+```
+
+What success looks like:
+- HTTP 200 response
+- JSON body with `project`, `model`, and optional `usage`
+- `project` is already normalized and validated server-side
+
+Quick failure checks:
+
+```bash
+# Missing prompt -> 400
+curl -i -X POST http://localhost:7773/llm/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+```bash
+# Missing OPENROUTER_API_KEY -> 400 (server logs show the reason)
+unset OPENROUTER_API_KEY
+curl -i -X POST http://localhost:7773/llm/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"test"}'
+```
+
+
 ## Running using Docker
 
 To run the NoiseCraft server using Docker please follow these steps:
