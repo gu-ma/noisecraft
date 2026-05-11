@@ -111,56 +111,6 @@ function getLLMNodeCatalog()
     return catalog;
 }
 
-
-function cleanupGeneratedProject(project)
-{
-    let removedNodeIds = [];
-    let removedConnections = 0;
-
-    for (let nodeId in project.nodes)
-    {
-        let node = project.nodes[nodeId];
-        if (!(node?.type in model.NODE_SCHEMA) || model.NODE_SCHEMA[node.type].internal)
-        {
-            delete project.nodes[nodeId];
-            removedNodeIds.push(nodeId);
-        }
-    }
-
-    for (let nodeId in project.nodes)
-    {
-        let node = project.nodes[nodeId];
-        if (!(node.ins instanceof Array))
-            continue;
-
-        for (let i = 0; i < node.ins.length; ++i)
-        {
-            let input = node.ins[i];
-            if (!input)
-                continue;
-
-            if (!(input instanceof Array) || input.length != 2)
-            {
-                node.ins[i] = null;
-                removedConnections += 1;
-                continue;
-            }
-
-            let srcId = input[0];
-            let outIdx = input[1];
-            let srcNode = project.nodes[srcId];
-
-            if (!srcNode || !isFinite(outIdx) || outIdx < 0 || outIdx >= srcNode.outNames.length)
-            {
-                node.ins[i] = null;
-                removedConnections += 1;
-            }
-        }
-    }
-
-    return { removedNodeIds, removedConnections };
-}
-
 function buildNoiseCraftSystemPrompt()
 {
     let nodeCatalog = JSON.stringify(getLLMNodeCatalog());
@@ -988,7 +938,6 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
         });
 
         let project = JSON.parse(llmRes.content);
-        let cleanup = cleanupGeneratedProject(project);
         model.normalizeProject(project);
         model.validateProject(project);
 
@@ -997,7 +946,6 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
             project: project,
             model: llmRes.model,
             usage: llmRes.usage,
-            cleanup: cleanup,
         }));
     }
     catch (e)
