@@ -23,6 +23,15 @@ var app = express();
 // Basic in-memory clock sessions for network sync
 const clockSessions = new Map();
 
+let llmReqCounter = 0;
+
+function nextLLMReqId()
+{
+    llmReqCounter += 1;
+    return `llm-${Date.now()}-${llmReqCounter}`;
+}
+
+
 function getClockSession(sessionId)
 {
     if (!clockSessions.has(sessionId))
@@ -66,6 +75,7 @@ function extractMessageText(message, choice = null, data = null)
 
 async function promptOpenRouter(messages, options = {})
 {
+    let reqId = options.reqId || 'llm-unknown';
     let apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey)
         throw TypeError('missing OPENROUTER_API_KEY');
@@ -79,6 +89,7 @@ async function promptOpenRouter(messages, options = {})
 
     async function callOpenRouter(useJSONFormat)
     {
+        console.log(`[${reqId}] OpenRouter call model=${modelName} jsonFormat=${useJSONFormat}`);
         let payload = {
             model: modelName,
             messages: messages,
@@ -102,6 +113,7 @@ async function promptOpenRouter(messages, options = {})
 
         if (!response.ok)
         {
+            console.log(`[${reqId}] OpenRouter HTTP status=${response.status}`);
             let errText = await response.text();
             throw TypeError(`openrouter error (${response.status}): ${errText.slice(0, 300)}`);
         }
@@ -117,7 +129,10 @@ async function promptOpenRouter(messages, options = {})
 
     // Some models/providers don't support response_format reliably.
     if (!msg)
+    {
+        console.log(`[${reqId}] empty content on first attempt, retrying without json format`);
         ({ data, msg } = await callOpenRouter(false));
+    }
 
 
     // Fallback to a known-good model if configured model produced no text
@@ -126,6 +141,7 @@ async function promptOpenRouter(messages, options = {})
         let fallbackModel = process.env.OPENROUTER_FALLBACK_MODEL || 'openai/gpt-4o-mini';
         if (modelName != fallbackModel)
         {
+            console.log(`[${reqId}] empty content, retrying with fallback model=${fallbackModel}`);
             let prevModel = modelName;
             modelName = fallbackModel;
             ({ data, msg } = await callOpenRouter(false));
@@ -136,7 +152,10 @@ async function promptOpenRouter(messages, options = {})
     }
 
     if (!msg)
+    {
+        console.log(`[${reqId}] failed to extract any message text`);
         throw TypeError('openrouter returned empty message');
+    }
 
     return {
         model: data.model || modelName,
@@ -214,7 +233,7 @@ function parseGeneratedProjectText(text)
 }
 
 
-async function parseOrRepairGeneratedProject(text, modelName)
+async function parseOrRepairGeneratedProject(text, modelName, reqId = 'llm-unknown')
 {
     try
     {
@@ -229,6 +248,7 @@ ${text}`;
             { role: 'system', content: 'You are a JSON repair assistant. Return JSON only.' },
             { role: 'user', content: repairPrompt },
         ], {
+            reqId: reqId + '-repair',
             model: modelName,
             temperature: 0,
             maxTokens: 2000,
@@ -1070,6 +1090,7 @@ app.post('/projects', jsonParser, async function (req, res)
         };
 
         res.statusCode = 201;
+        console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
         res.setHeader('Content-Type', 'application/json');
         return res.send(JSON.stringify(resData));
     }
@@ -1108,7 +1129,8 @@ app.get('/list/:from', jsonParser, function (req, res)
             }
 
             let jsonStr = JSON.stringify(rows);
-            res.setHeader('Content-Type', 'application/json');
+            console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
+        res.setHeader('Content-Type', 'application/json');
             res.send(jsonStr);
         }
     );
@@ -1141,7 +1163,8 @@ app.post('/featured/:id', jsonParser, async function (req, res)
                 return res.sendStatus(400);
             }
 
-            res.setHeader('Content-Type', 'application/json');
+            console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
+        res.setHeader('Content-Type', 'application/json');
             res.send(JSON.stringify(featured));
         }
     );
@@ -1162,7 +1185,8 @@ app.get('/projects/:id', function (req, res)
             if (err || !row)
                 return res.sendStatus(404);
 
-            res.setHeader('Content-Type', 'application/json');
+            console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
+        res.setHeader('Content-Type', 'application/json');
             res.send(JSON.stringify(row));
         }
     );
@@ -1202,8 +1226,12 @@ app.delete('/projects', async function (req, res)
 
 app.post('/llm/prompt', jsonParser, async function (req, res)
 {
+    let reqId = nextLLMReqId();
+    let t0 = Date.now();
+
     try
     {
+        console.log(`[${reqId}] /llm/prompt start`);
         let prompt = req.body.prompt;
         if (typeof prompt != 'string' || prompt.length == 0 || prompt.length > 4000)
             return res.sendStatus(400);
@@ -1219,17 +1247,19 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
                     + '{"title":"Patch Name","nodes":{"0":{"type":"Sine","name":"Sine","x":0,"y":0,"ins":[null,null],"inNames":["freq","sync"],"outNames":["out"],"params":{"minVal":-1,"maxVal":1}}}}'
             },
         ], {
+            reqId: reqId,
             model: req.body.model,
             maxTokens: req.body.maxTokens,
             temperature: req.body.temperature,
         });
 
-        let project = await parseOrRepairGeneratedProject(llmRes.content, req.body.model);
+        let project = await parseOrRepairGeneratedProject(llmRes.content, req.body.model, reqId);
         project = coerceGeneratedProject(project);
         autoConnectGeneratedProject(project);
         model.normalizeProject(project);
         model.validateProject(project);
 
+        console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
         res.setHeader('Content-Type', 'application/json');
         return res.send(JSON.stringify({
             project: project,
@@ -1239,7 +1269,7 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
     }
     catch (e)
     {
-        console.log('llm prompt request failed');
+        console.log(`[${reqId}] llm prompt request failed after ${Date.now() - t0}ms`);
         console.log(e);
         return res.sendStatus(400);
     }
