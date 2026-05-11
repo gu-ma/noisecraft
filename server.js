@@ -83,7 +83,7 @@ async function promptOpenRouter(messages, options = {})
     if (!(messages instanceof Array) || messages.length == 0)
         throw TypeError('messages must be a non-empty array');
 
-    let modelName = options.model || process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
+    let modelName = options.model || process.env.OPENROUTER_MODEL || 'moonshotai/kimi-k2.6';
     let maxTokens = options.maxTokens || 1400;
     let temperature = options.temperature ?? 0.4;
 
@@ -96,6 +96,9 @@ async function promptOpenRouter(messages, options = {})
             temperature: temperature,
             max_tokens: maxTokens,
         };
+
+        if (options.preset)
+            payload.preset = options.preset;
 
         if (useJSONFormat)
             payload.response_format = { type: 'json_object' };
@@ -1194,8 +1197,7 @@ app.get('/list/:from', jsonParser, function (req, res)
             }
 
             let jsonStr = JSON.stringify(rows);
-            console.log(`[${reqId}] success in ${Date.now() - t0}ms model=${llmRes.model} nodes=${Object.keys(project.nodes).length}`);
-        res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Content-Type', 'application/json');
             res.send(jsonStr);
         }
     );
@@ -1301,19 +1303,17 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
         if (typeof prompt != 'string' || prompt.length == 0 || prompt.length > 4000)
             return res.sendStatus(400);
 
+        let presetName = req.body.preset || process.env.OPENROUTER_PRESET || 'Noisecrafter';
+
         let llmRes = await promptOpenRouter([
-            { role: 'system', content: buildNoiseCraftSystemPrompt() },
             {
                 role: 'user',
-                content: `Generate one complete NoiseCraft project from this request: ${prompt}
-
-`
-                    + 'Example output shape (fill with your own content): '
-                    + '{"title":"Patch Name","nodes":{"0":{"type":"Sine","name":"Sine","x":0,"y":0,"ins":[null,null],"inNames":["freq","sync"],"outNames":["out"],"params":{"minVal":-1,"maxVal":1}}}}'
+                content: 'Generate one complete NoiseCraft project JSON from this request: ' + prompt
             },
         ], {
             reqId: reqId,
             model: req.body.model,
+            preset: presetName,
             maxTokens: req.body.maxTokens,
             temperature: req.body.temperature,
         });
