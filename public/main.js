@@ -317,7 +317,21 @@ async function requestAIGeneration(prompt)
     });
 
     if (!response.ok)
-        throw TypeError('AI generation failed');
+    {
+        let errMsg = 'AI generation failed';
+
+        try
+        {
+            let errData = await response.json();
+            if (typeof errData?.error == 'string')
+                errMsg = errData.error + (errData.requestId? ` (requestId=${errData.requestId})`:'');
+        }
+        catch (e)
+        {
+        }
+
+        throw TypeError(errMsg);
+    }
 
     return response.json();
 }
@@ -389,7 +403,7 @@ function showGenerateDialog()
             console.log(e);
             previewPre.textContent = 'No preview available.';
             useBtn.disabled = true;
-            dialog.showError('Generation failed. Check server logs/API key.');
+            dialog.showError(e.message || 'Generation failed. Check server logs/API key.');
         }
     }
 

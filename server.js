@@ -1005,10 +1005,19 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
             temperature: req.body.temperature,
         });
 
+        console.log(`[${reqId}] parsing generated JSON`);
         let project = await parseOrRepairGeneratedProject(llmRes.content, req.body.model, reqId);
+
+        console.log(`[${reqId}] coercing project`);
         project = coerceGeneratedProject(project);
+
+        console.log(`[${reqId}] auto-connecting project`);
         autoConnectGeneratedProject(project);
+
+        console.log(`[${reqId}] normalizing project`);
         model.normalizeProject(project);
+
+        console.log(`[${reqId}] validating project`);
         model.validateProject(project);
 
         let reasoningTokens = llmRes.usage?.completion_tokens_details?.reasoning_tokens;
@@ -1025,7 +1034,12 @@ app.post('/llm/prompt', jsonParser, async function (req, res)
     {
         console.log(`[${reqId}] llm prompt request failed after ${Date.now() - t0}ms`);
         console.log(e);
-        return res.sendStatus(400);
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify({
+            error: (e && e.message)? e.message:'llm prompt request failed',
+            requestId: reqId,
+        }));
     }
 });
 
