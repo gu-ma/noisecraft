@@ -413,7 +413,7 @@ async function requestAIGenerationStream(prompt, handlers = {}, options = {})
 
 function showGenerateDialog()
 {
-    let dialog = new Dialog('Generate with AI');
+    let dialog = new Dialog('Generate');
     let promptIdeas = [
         'A bass that moves like a shadow under the floorboards.',
         'A lead synth that cuts through the night like neon glass.',
@@ -446,6 +446,13 @@ function showGenerateDialog()
     let ideasLabel = document.createElement('p');
     ideasLabel.textContent = 'Prompt inspiration (optional):';
     dialog.appendChild(ideasLabel);
+
+    let browseLink = document.createElement('a');
+    browseLink.href = 'https://noisecraft.app/browse';
+    browseLink.target = '_blank';
+    browseLink.rel = 'noopener noreferrer';
+    browseLink.textContent = 'Browse public projects for inspiration';
+    dialog.appendChild(browseLink);
 
     let ideasSelect = document.createElement('select');
     ideasSelect.style.width = '95%';
@@ -761,6 +768,13 @@ function showLoadURLDialog()
     input.style.width = '95%';
     input.placeholder = 'https://noisecraft.app/162 or 162';
     dialog.appendChild(input);
+
+    let browseLink = document.createElement('a');
+    browseLink.href = 'https://noisecraft.app/browse';
+    browseLink.target = '_blank';
+    browseLink.rel = 'noopener noreferrer';
+    browseLink.textContent = 'Find project IDs on the browse page';
+    dialog.appendChild(browseLink);
 
     let loadBtn = document.createElement('button');
     loadBtn.className = 'form_btn';
